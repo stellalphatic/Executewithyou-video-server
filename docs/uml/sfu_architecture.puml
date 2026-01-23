@@ -1,0 +1,10 @@
+@startuml
+actor Participant
+participant SFU
+actor Host
+
+Participant -> SFU: Send video/audio stream
+SFU -> Host: Forward streams from all other participants
+SFU -> Participant: Forward streams from all other participants
+note right of SFU: Each participant receives N-1 streams
+@enduml

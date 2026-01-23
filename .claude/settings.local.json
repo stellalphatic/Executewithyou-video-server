@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc:*)",
+      "Bash(find:*)",
+      "Bash(cargo check:*)",
+      "Bash(ls:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo fix:*)",
+      "Bash(grep:*)",
+      "Bash(cargo search:*)",
+      "Bash(cargo doc:*)",
+      "Bash(cargo build:*)",
+      "Bash(npx tsc:*)",
+      "Bash(docker compose:*)",
+      "Bash(docker logs:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker inspect:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker run:*)",
+      "Bash(curl:*)",
+      "Bash(tree:*)",
+      "Bash(docker-compose:*)"
+    ]
+  }
+}

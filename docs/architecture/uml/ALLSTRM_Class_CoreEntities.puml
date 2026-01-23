@@ -1,0 +1,103 @@
+@startuml ALLSTRM_Class_CoreEntities
+!theme plain
+
+class Organization {
+  id: UUID
+  name: String
+  slug: String
+  billing_tier
+  max_rooms
+  features: JSON
+}
+
+class User {
+  id: UUID
+  email: String
+  display_name
+  avatar_url
+  plan: Plan
+  settings: JSON
+}
+
+class Room {
+  id: UUID
+  name: String
+  mode: RoomMode
+  status
+  stream_config
+}
+
+class OAuthConnection {
+  id: UUID
+  provider
+  access_token
+  refresh_token
+  is_active
+}
+
+class Participant {
+  id: UUID
+  room_id
+  user_id
+  display_name
+  role
+  tracks: JSON
+  status
+}
+
+class Destination {
+  id: UUID
+  room_id
+  platform
+  rtmp_url
+  stream_key
+  status
+  enabled
+}
+
+Organization "1" -- "*" Room
+User "1" -- "*" OAuthConnection
+Room "1" -- "*" Participant
+Room "1" -- "*" Destination
+Participant "*" -- "1" User
+Destination "*" -- "1" Room
+
+enum RoomMode {
+  meeting
+  studio
+  webinar
+}
+enum RoomStatus {
+  idle
+  preparing
+  live
+  paused
+  recording
+  ending
+  ended
+}
+enum DestStatus {
+  idle
+  connecting
+  live
+  unstable
+  reconnecting
+  error
+  offline
+}
+enum Platform {
+  youtube
+  twitch
+  facebook
+  linkedin
+  x
+  tiktok
+  instagram
+  kick
+  vimeo
+  amazon
+  brightcove
+  hopin
+  custom_rtmp
+}
+@enduml

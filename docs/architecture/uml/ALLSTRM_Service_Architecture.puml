@@ -1,0 +1,35 @@
+@startuml ALLSTRM_Service_Architecture
+!theme plain
+
+title ALLSTRM Microservices Architecture
+
+package "Gateway Service (8080)" as gateway_pkg {
+  [Auth Middleware]
+  [Rate Limiter]
+  [WebSocket Handler]
+  [Proxy Router]
+}
+
+package "Core Service (8081)" as core_pkg {
+  [Room Management]
+  [User Management]
+  [Organization Management]
+  [Destination Management]
+  [API Key Management]
+}
+
+package "SFU Service (8082)" as sfu_pkg {
+  [Peer Connection Manager]
+  [Track Router]
+  [Signaling Handler]
+  [Room Manager]
+}
+
+package "Stream Service (8083)" as stream_pkg {
+  [FFmpeg Manager]
+  [RTMP Handler]
+  [HLS Generator]
+  [Session Manager]
+  [Stats Collector]
+}
+@enduml

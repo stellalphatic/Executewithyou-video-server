@@ -1,0 +1,23 @@
+[package]
+name = "allstrm-common"
+version = "0.1.0"
+edition = "2021"
+description = "ALLSTRM Common - Shared types, errors, and configuration"
+authors = ["ALLSTRM Team"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+anyhow = "1"
+tracing = "0.1"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+config = "0.14"
+dotenvy = "0.15"
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "migrate"], optional = true }
+tokio = { version = "1", features = ["fs"], optional = true }
+
+[features]
+default = []
+database = ["sqlx", "tokio"]

@@ -1,0 +1,81 @@
+@startuml ALLSTRM_Component_Diagram
+!theme plain
+
+' Component Diagram for ALLSTRM System
+
+package "Frontend (React + TypeScript)" {
+  [Studio Component]
+  [Meeting Component]
+  [Dashboard Component]
+  [Library Component]
+}
+
+package "Engine Layer" {
+  [SFUWebRTC Manager]
+  [SignalClient]
+  [BroadcastEngine]
+}
+
+[Studio Component] --> [SFUWebRTC Manager]
+[Meeting Component] --> [SFUWebRTC Manager]
+[Dashboard Component] --> [SignalClient]
+[Library Component] --> [BroadcastEngine]
+
+cloud "API Gateway (8080)" {
+  [Auth Middleware]
+  [Rate Limiter]
+  [WebSocket Handler]
+  [Proxy Router]
+  [Metrics Export]
+}
+
+[SFUWebRTC Manager] --> [WebSocket Handler]
+[SignalClient] --> [WebSocket Handler]
+[BroadcastEngine] --> [Proxy Router]
+
+package "Core Service (8081)" {
+  [Rooms]
+  [Users]
+  [OAuth]
+  [Destinations]
+}
+
+package "SFU Service (8082)" {
+  [WebRTC]
+  [SDP/ICE]
+  [Tracks]
+}
+
+package "Stream Service (8083)" {
+  [FFmpeg]
+  [HLS]
+  [RTMP]
+}
+
+package "Storage Service (8084)" {
+  [R2/S3]
+  [Assets]
+}
+
+[Proxy Router] --> [Rooms]
+[Proxy Router] --> [Users]
+[Proxy Router] --> [OAuth]
+[Proxy Router] --> [Destinations]
+[Proxy Router] --> [WebRTC]
+[Proxy Router] --> [FFmpeg]
+[Proxy Router] --> [R2/S3]
+
+database "PostgreSQL 15" as db {
+  [core schema]
+  [stream schema]
+  [assets schema]
+}
+
+[Rooms] --> db
+[Users] --> db
+[OAuth] --> db
+[Destinations] --> db
+[FFmpeg] --> [stream schema]
+[Assets] --> [assets schema]
+
+@enduml

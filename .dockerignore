@@ -1,0 +1,22 @@
+# The Big One: Rust build artifacts
+target/
+**/target/
+
+# The Frontend giant
+**/node_modules/
+node_modules/
+**/.next/
+.next/
+frontend/dist/
+
+# Version Control (can be huge)
+.git/
+.gitignore
+
+# Environment/Secrets
+.env
+.env.*
+
+# OS Junk
+.DS_Store
+Thumbs.db

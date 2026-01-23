@@ -1,0 +1,106 @@
+############################
+# OS / Editor / IDE
+############################
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+*.code-workspace
+
+############################
+# Node / Next.js
+############################
+node_modules/
+**/node_modules/
+
+.next/
+out/
+dist/
+build/
+.cache/
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+
+# OKIE FOR NOW
+
+# .env
+# .env.*
+# !.env.example
+
+.vercel/
+
+############################
+# Rust / Cargo
+############################
+target/
+**/target/
+
+Cargo.lock.backup
+*.rlib
+*.rmeta
+
+############################
+# Build artifacts (generic)
+############################
+*.log
+*.tmp
+*.temp
+
+*.exe
+*.dll
+*.so
+*.dylib
+
+*.wasm
+
+############################
+# Large binaries / native builds
+############################
+*.node
+*.a
+*.o
+
+############################
+# Next.js native SWC binaries
+############################
+**/@next/swc-*/
+**/next-swc.*
+
+############################
+# Coverage / Testing
+############################
+coverage/
+.nyc_output/
+
+############################
+# Docker / runtime
+############################
+*.pid
+*.sock
+
+############################
+# Package managers
+############################
+.pnpm-store/
+.yarn/cache/
+.yarn/unplugged/
+.yarn/build-state.yml
+
+############################
+# Generated API / clients
+############################
+**/generated/
+**/gen/
+
+############################
+# Temporary / runtime files
+############################
+tmp/
+temp/
+.cache/

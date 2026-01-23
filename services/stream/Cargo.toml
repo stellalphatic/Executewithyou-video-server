@@ -1,0 +1,63 @@
+[package]
+name = "allstrm-stream"
+version = "0.1.0"
+edition = "2021"
+description = "ALLSTRM Stream Service (S2) - RTMP ingest, HLS output, multi-destination relay"
+authors = ["ALLSTRM Team"]
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.36", features = ["full", "process"] }
+
+# Web framework
+axum = { version = "0.7", features = ["macros", "ws"] }
+tower = { version = "0.4" }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# HTTP client for callbacks
+reqwest = { version = "0.11", features = ["json"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Configuration
+dotenvy = "0.15"
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Time & IDs
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Concurrency
+dashmap = "5"
+parking_lot = "0.12"
+
+# Bytes handling
+bytes = "1"
+
+# Process execution for FFmpeg
+async-process = "2"
+
+# Shared crates
+allstrm-common = { path = "../common" }
+allstrm-protocol = { path = "../protocol" }
+
+# Error handling
+anyhow = "1"
+thiserror = "1"
+
+# Temporary file handling
+tempfile = "3"
+
+# Hex encoding
+hex = "0.4"
+
+# Tokio utilities for streaming
+tokio-util = { version = "0.7", features = ["io"] }
+
+[dev-dependencies]
+tokio-test = "0.4"

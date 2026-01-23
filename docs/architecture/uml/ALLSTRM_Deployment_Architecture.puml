@@ -1,0 +1,43 @@
+@startuml ALLSTRM_Deployment_Architecture
+!theme plain
+
+cloud "Cloud Region" {
+  rectangle "Load Balancer (nginx/ALB)" as LB {
+    node "Port 443 (HTTPS)" as HTTPS
+  }
+  rectangle "Gateway Instances" as GW {
+    node "Gateway Instance 1 (8080)" as GW1
+    node "Gateway Instance 2 (8080)" as GW2
+    node "Gateway Instance N (8080)" as GWN
+  }
+  package "Internal Service Mesh" as Mesh {
+    node "Core (8081) x3 pods" as Core
+    node "SFU (8082) x5 pods" as SFU
+    node "Stream (8083) x3 pods" as Stream
+    node "Storage (8084) x2 pods" as Storage
+  }
+  folder "Data Layer" as Data {
+    database "PostgreSQL (Primary + Replicas)" as PG
+    database "Redis (Cluster)" as Redis
+    database "Cloudflare R2 (Object Storage)" as R2
+  }
+}
+
+' Add connections for clarity
+HTTPS --> LB
+LB --> GW1
+LB --> GW2
+LB --> GWN
+GW1 --> Core
+GW2 --> Core
+GWN --> Core
+Core --> SFU
+Core --> Stream
+Core --> Storage
+SFU --> Redis
+Stream --> PG
+Stream --> R2
+Storage --> R2
+PG --> Redis
+
+@enduml

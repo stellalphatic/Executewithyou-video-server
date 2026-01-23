@@ -1,0 +1,19 @@
+@startuml ALLSTRM_Sequence_Studio
+!theme plain
+
+actor Frontend
+participant Gateway
+participant Stream
+participant Storage
+participant Destinations
+
+Frontend -> Gateway: RTMP Stream (H.264+AAC)
+Gateway -> Stream: on_publish
+Stream -> Stream: Start FFmpeg
+Stream -> Storage: HLS Output (.ts files)
+Stream -> Destinations: RTMP Relay (to each destination)
+Destinations -> Gateway: DESTINATION_UPDATE (status: live, bitrate, fps)
+Frontend -> Gateway: Disconnect
+Stream -> Storage: Upload Recording
+Storage -> Storage: Store in R2
+@enduml

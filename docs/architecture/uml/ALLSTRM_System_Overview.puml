@@ -1,0 +1,52 @@
+@startuml ALLSTRM_System_Overview
+!theme plain
+
+title ALLSTRM Streaming Platform - System Overview
+
+actor "Host" as host
+actor "Guest" as guest
+actor "Viewer" as viewer
+
+cloud "Frontend (Next.js)" as frontend {
+  [Dashboard]
+  [Studio]
+  [Viewer Page]
+}
+
+cloud "ALLSTRM Backend" as backend {
+  package "Cloud Services" {
+    [Gateway\n:8080] as gateway
+    [Core\n:8081] as core
+    [Storage\n:8084] as storage
+  }
+
+  package "Edge Services" {
+    [SFU\n:8082] as sfu
+    [Stream\n:8083] as stream
+  }
+}
+
+database "PostgreSQL" as db
+database "Redis" as redis
+cloud "Cloudflare R2" as r2
+
+host --> [Studio] : Manage Room
+guest --> [Studio] : Join Room
+viewer --> [Viewer Page] : Watch HLS
+
+[Dashboard] --> gateway : REST API
+[Studio] --> gateway : WebSocket
+[Viewer Page] --> stream : HLS Segments
+
+gateway --> core : Proxy
+gateway --> sfu : WebSocket Forward
+gateway --> storage : Proxy
+
+core --> db : SQL
+sfu --> redis : Pub/Sub
+stream --> redis : State
+storage --> r2 : S3 API
+
+sfu <--> stream : Media Relay
+
+@enduml

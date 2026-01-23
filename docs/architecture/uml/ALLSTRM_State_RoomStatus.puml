@@ -1,0 +1,15 @@
+@startuml ALLSTRM_State_RoomStatus
+!theme plain
+
+[*] --> idle
+idle --> preparing: create_room()
+preparing --> live: participants join
+preparing --> ended: timeout
+live --> paused: pause()
+paused --> live: resume
+live --> ending: stop()
+ending --> ended
+paused --> ending: stop()
+preparing --> error: error
+ending --> error: error
+@enduml

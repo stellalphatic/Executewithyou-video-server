@@ -1,0 +1,22 @@
+# SQLx configuration for ALLSTRM Backend
+# See: https://github.com/launchbadge/sqlx/blob/main/sqlx-cli/README.md
+
+[database]
+# Database URL for migrations and compile-time checking
+# Override with DATABASE_URL environment variable
+url = "postgres://allstrm:password@localhost:5432/allstrm"
+max_connections = 5
+connect_timeout = 10
+
+[migrations]
+# Path to migrations directory (relative to workspace root)
+source = "migrations"
+# Table name for tracking applied migrations
+table_name = "_sqlx_migrations"
+# Ignore missing migrations when running
+ignore_missing = false
+
+[query]
+# Enable compile-time query checking
+# Requires running `cargo sqlx prepare` after schema changes
+check = false  # Set to true once you have .sqlx/ prepared

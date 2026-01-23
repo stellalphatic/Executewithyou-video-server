@@ -1,0 +1,24 @@
+@startuml ALLSTRM_Sequence_Meeting
+!theme plain
+
+actor Client
+participant Gateway
+participant SFU
+participant Core
+
+Client -> Gateway: WS Connect
+Client -> Gateway: JOIN_REQUEST
+Gateway -> SFU: POST /join
+SFU -> Core: Get Room
+Core --> SFU: Room Info
+SFU --> Gateway: JOIN_ACCEPTED (participants, ICE servers)
+Gateway --> Client: JOIN_ACCEPTED
+Client -> Gateway: OFFER (SDP)
+Gateway -> SFU: POST /offer
+SFU --> Gateway: SDP answer
+Gateway --> Client: ANSWER
+Client -> Gateway: ICE_CANDIDATE
+Gateway -> SFU: POST /ice
+Client -> SFU: WebRTC Media (Audio/Video)
+Gateway --> Client: PARTICIPANT_JOINED (broadcast)
+@enduml

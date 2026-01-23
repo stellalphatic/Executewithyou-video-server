@@ -1,0 +1,20 @@
+[workspace]
+members = [
+    "services/common",
+    "services/protocol",
+    "services/gateway",
+    "services/core",
+    "services/sfu",
+    "services/stream",
+    "services/storage",
+]
+resolver = "2"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.release.package."*"]
+opt-level = 3
