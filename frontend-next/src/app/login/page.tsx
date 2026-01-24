@@ -29,8 +29,20 @@ export default function LoginPage() {
                 return;
             }
 
-            // Redirect to dashboard on success
-            router.push('/dashboard');
+            // Check if there's a pending room to join
+            const pendingRoom = sessionStorage.getItem('pendingJoinRoom');
+            const pendingMode = sessionStorage.getItem('pendingJoinMode') || 'meeting';
+            
+            if (pendingRoom) {
+                // Clear the pending join data
+                sessionStorage.removeItem('pendingJoinRoom');
+                sessionStorage.removeItem('pendingJoinMode');
+                // Redirect to the join page which will route to the correct mode
+                router.push(`/join/${pendingRoom}?mode=${pendingMode}`);
+            } else {
+                // Redirect to dashboard on success
+                router.push('/dashboard');
+            }
         } catch (err: any) {
             setError(err.message || 'An error occurred');
         } finally {

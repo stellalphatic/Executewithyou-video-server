@@ -10,7 +10,7 @@
 
 ## System Overview
 
-ALLSTRM is a microservices-based live streaming platform built with Rust, supporting:
+ALLSTRM is a distributed live streaming platform built with Rust, supporting:
 - **Video Conferencing** (Meeting Mode)
 - **Live Streaming** (Studio Mode)
 - **Multi-Platform Broadcasting** (13+ destinations)
@@ -20,7 +20,7 @@ ALLSTRM is a microservices-based live streaming platform built with Rust, suppor
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         CLIENTS                                      │
-│  (Browser / OBS / Mobile)                                           │
+│              (Web Browser - Desktop/Mobile)                         │
 └──────────────────────┬──────────────────────────────────────────────┘
                        │
                        ▼
@@ -175,15 +175,15 @@ ALLSTRM is a microservices-based live streaming platform built with Rust, suppor
 
 ```
 ┌──────┐    ┌─────────┐    ┌──────┐    ┌───────┐    ┌─────────────┐
-│ OBS  │    │ Gateway │    │Stream│    │Storage│    │Destinations │
+│Browser│   │ Gateway │    │Stream│    │Storage│    │Destinations │
 └──┬───┘    └────┬────┘    └──┬───┘    └───┬───┘    └──────┬──────┘
    │             │            │            │               │
-   │ RTMP Stream │            │            │               │
-   │ (H.264+AAC) │            │            │               │
-   │────────────────────────►│            │               │
+   │ WebRTC      │            │            │               │
+   │ (Media)     │            │            │               │
+   │────────────►│            │            │               │
    │             │            │            │               │
-   │             │ on_publish │            │               │
-   │             │◄───────────│            │               │
+   │             │ Forward to │            │               │
+   │             │───────────►│            │               │
    │             │            │            │               │
    │             │            │ Start FFmpeg               │
    │             │            │────┐       │               │
@@ -370,7 +370,7 @@ ALLSTRM is a microservices-based live streaming platform built with Rust, suppor
 | Priority | Task | Status | Details |
 |----------|------|--------|---------|
 | **P0** | OAuth Credentials Setup | Pending | Add YouTube, Twitch, Facebook API keys to enable OAuth |
-| **P0** | Test Full Streaming Flow | Pending | Test OBS → RTMP → HLS → Destinations |
+| **P0** | Test Full Streaming Flow | Pending | Test WebRTC → FFmpeg → HLS → Destinations |
 | **P1** | Database Migrations | Pending | Run all migrations on fresh PostgreSQL |
 | **P1** | Environment Variables | Pending | Document all required env vars in `.env.example` |
 
@@ -755,7 +755,7 @@ curl http://localhost:8084/health
 
 ALLSTRM is a production-ready streaming platform with:
 
-- **5 Microservices** (Gateway, Core, SFU, Stream, Storage)
+- **5 Services** (Gateway, Core, SFU, Stream, Storage)
 - **3 Modes** (Meeting, Studio, Webinar)
 - **13 Streaming Destinations** with OAuth
 - **Hybrid Deployment** support (Cloud + Edge)

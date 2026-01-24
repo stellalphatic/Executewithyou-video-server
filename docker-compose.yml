@@ -1,0 +1,106 @@
+version: '3.8'
+
+# ALLSTRM v2 - LiveKit-based Architecture
+# Much simpler than the previous 5-service Rust architecture
+
+services:
+  # =============================================================================
+  # LiveKit Server - WebRTC SFU with built-in recording & egress
+  # Replaces: gateway, sfu, stream services
+  # =============================================================================
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: allstrm-livekit
+    ports:
+      - "7880:7880"   # HTTP/WebSocket
+      - "7881:7881"   # RTC over TCP
+      - "7882:7882/udp" # RTC over UDP (WebRTC)
+      - "50100-50200:50100-50200/udp" # ICE/TURN UDP ports
+    environment:
+      LIVEKIT_KEYS: "devkey: devsecret"
+    command: --config /etc/livekit.yaml --dev
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:7880"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # =============================================================================
+  # LiveKit Egress - Recording & RTMP streaming
+  # Handles all media output (recording, multi-destination RTMP)
+  # =============================================================================
+  egress:
+    image: livekit/egress:latest
+    container_name: allstrm-egress
+    environment:
+      - EGRESS_CONFIG_FILE=/etc/egress.yaml
+    volumes:
+      - ./egress.yaml:/etc/egress.yaml:ro
+      - ./recordings:/recordings
+    depends_on:
+      - livekit
+      - redis
+
+  # =============================================================================
+  # Redis - Session state for LiveKit
+  # =============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: allstrm-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+  # =============================================================================
+  # NOTE: Supabase runs separately via `supabase start` (port 8000)
+  # This gives you full auth, DB, storage, and realtime
+  # =============================================================================
+
+  # =============================================================================
+  # MinIO - S3-compatible storage for recordings (dev only)
+  # In production, use Cloudflare R2 or AWS S3
+  # =============================================================================
+  minio:
+    image: minio/minio:latest
+    container_name: allstrm-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+
+  # =============================================================================
+  # Next.js Frontend
+  # =============================================================================
+  frontend:
+    build:
+      context: ./frontend-next
+      dockerfile: Dockerfile.dev
+    container_name: allstrm-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_LIVEKIT_URL=ws://localhost:7880
+      - NEXT_PUBLIC_SUPABASE_URL=http://host.docker.internal:54321
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
+      - LIVEKIT_API_KEY=devkey
+      - LIVEKIT_API_SECRET=devsecret
+      - LIVEKIT_URL=http://host.docker.internal:7880
+    volumes:
+      - ./frontend-next:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - livekit
+
+volumes:
+  redis_data:
+  minio_data:

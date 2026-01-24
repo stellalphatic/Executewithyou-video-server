@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import Script from "next/script";
 import { Providers } from "./providers";
 
 const inter = Inter({
@@ -28,27 +27,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <head>
-        {/* MediaPipe for Virtual Backgrounds */}
-        <Script
-          src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"
-          strategy="beforeInteractive"
-          crossOrigin="anonymous"
-        />
-        <Script
-          src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"
-          strategy="beforeInteractive"
-          crossOrigin="anonymous"
-        />
-        <Script
-          src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"
-          strategy="beforeInteractive"
-          crossOrigin="anonymous"
-        />
-        <Script
-          src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"
-          strategy="beforeInteractive"
-          crossOrigin="anonymous"
-        />
+        {/* MediaPipe scripts are loaded lazily in VideoProcessor when needed */}
       </head>
       <body
         className={`${inter.variable} ${jetbrainsMono.variable} font-sans antialiased`}

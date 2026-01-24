@@ -8,13 +8,13 @@ import {
     X, Activity, ArrowUpRight, Clock, Calendar, Search, User,
     MoreHorizontal, ChevronRight
 } from 'lucide-react';
-import { Library } from '../components/Library';
-import { Destinations } from '../components/Destinations';
-import { Members } from '../components/Members';
-import { TeamSettings } from '../components/TeamSettings';
-import { AccountSettings } from '../components/AccountSettings';
-import { StudioSetup } from '../components/StudioSetup';
-import { VideoEditor } from '../components/Editor/VideoEditor';
+import { Library } from '@/components/Library';
+import { Destinations } from '@/components/Destinations';
+import { Members } from '@/components/Members';
+import { TeamSettings } from '@/components/TeamSettings';
+import { AccountSettings } from '@/components/AccountSettings';
+import { StudioSetup } from '@/components/StudioSetup';
+import { VideoEditor } from '@/components/Editor/VideoEditor';
 import { MediaAsset, RoomMode, VisualConfigType } from '@/types';
 import { Button } from '@/components/Button';
 import { Pricing } from './Pricing';
@@ -84,7 +84,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToStudio, onLogo
 
     if (setupMode) {
         return <StudioSetup 
-            onEnterStudio={(name, cam, mic, vConfig) => onNavigateToStudio(`room-${Date.now()}`, name, setupMode, vConfig)} 
+            onEnterStudio={(name, cam, mic, vConfig, resolution, frameRate, recordingConfig) => onNavigateToStudio(`room-${Date.now()}`, name, setupMode, vConfig)} 
             defaultName="Host" 
             isMeeting={setupMode === 'meeting'}
         />;

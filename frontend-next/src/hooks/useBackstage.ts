@@ -1,9 +1,6 @@
 'use client';
 
-
 import { useState, useCallback, useEffect } from 'react';
-import { SignalClient } from '@/lib/engines/SignalClient';
-import { WEBSOCKET_URL } from '@/lib/constants';
 import { CueState } from '../components/GreenRoom/CueSystem';
 
 export interface BackstageState {
@@ -13,49 +10,42 @@ export interface BackstageState {
     latency: number;
 }
 
-export function useBackstage(participantId: string, token: string) {
-    const [client] = useState(() => new SignalClient(WEBSOCKET_URL));
+/**
+ * Backstage hook - provides green room functionality
+ * Now uses local state instead of the old SignalClient
+ * LiveKit handles the actual WebRTC connection
+ */
+export function useBackstage(participantId: string, _token?: string) {
     const [state, setState] = useState<BackstageState>({
-        isConnected: false,
+        isConnected: true, // Always "connected" in LiveKit mode
         isReady: false,
         cueState: 'idle',
         latency: 0
     });
 
+    // Simulate connection success immediately
     useEffect(() => {
-        // Initialize S1 Connection
-        client.connect(token).then(() => {
-            setState(s => ({ ...s, isConnected: true }));
-        }).catch(err => {
-            console.error("[Backstage] Connection failed", err);
-        });
-
-        // Listen for Cues
-        client.on('MEDIA_STATE_UPDATE', (payload: any) => {
-            if (payload.cue) {
-                setState(s => ({ ...s, cueState: payload.cue }));
-            }
-        });
-
-        return () => client.disconnect();
-    }, [client, token]);
+        console.log('[Backstage] LiveKit mode - participant:', participantId);
+        setState(s => ({ ...s, isConnected: true }));
+    }, [participantId]);
 
     const toggleReady = useCallback(() => {
-        const newReadyState = !state.isReady;
-        setState(s => ({ ...s, isReady: newReadyState }));
-        client.send('PARTICIPANT_UPDATE', { 
-            id: participantId, 
-            ready: newReadyState 
-        });
-    }, [client, state.isReady, participantId]);
+        setState(s => ({ ...s, isReady: !s.isReady }));
+    }, []);
 
     const sendReaction = useCallback((emoji: string) => {
-        client.send('PARTICIPANT_UPDATE', { reaction: emoji });
-    }, [client]);
+        console.log('[Backstage] Reaction:', emoji);
+        // In LiveKit mode, reactions are sent via data channel in useAllstrmLiveKit
+    }, []);
+
+    const setCue = useCallback((cue: CueState) => {
+        setState(s => ({ ...s, cueState: cue }));
+    }, []);
 
     return {
         ...state,
         toggleReady,
-        sendReaction
+        sendReaction,
+        setCue
     };
 }

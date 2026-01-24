@@ -24,7 +24,7 @@ type DashboardView = 'overview' | 'library' | 'destinations' | 'team' | 'setting
 
 export default function DashboardPage() {
     const router = useRouter();
-    const { signOut, isAuthenticated, isLoading, hasAnotherTab, takeAccess, user } = useAuth();
+    const { signOut, isAuthenticated, isLoading, hasAnotherTab, canTakeAccess, takeAccess, user } = useAuth();
     const displayName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'User';
     const initials = displayName.split(' ').map((n: string) => n[0]).join('').toUpperCase().substring(0, 2);
 
@@ -36,39 +36,14 @@ export default function DashboardPage() {
 
     const profileMenuRef = useRef<HTMLDivElement>(null);
 
+    // ALL HOOKS MUST BE DEFINED BEFORE ANY EARLY RETURNS
+
     // Redirect if not authenticated
     useEffect(() => {
         if (!isLoading && !isAuthenticated) {
             router.push('/login');
         }
     }, [isAuthenticated, isLoading, router]);
-
-    if (hasAnotherTab) {
-        return (
-            <div className="flex h-screen w-full items-center justify-center bg-[#0a0a0a] text-white p-6">
-                <div className="max-w-md w-full text-center space-y-8 animate-scale-in">
-                    <div className="w-20 h-20 bg-indigo-500/10 rounded-3xl flex items-center justify-center mx-auto ring-1 ring-indigo-500/30">
-                        <Share2 className="w-10 h-10 text-indigo-500" />
-                    </div>
-                    <div>
-                        <h1 className="text-3xl font-bold tracking-tight mb-2">Dashboard Open Elsewhere</h1>
-                        <p className="text-gray-400 font-sans leading-relaxed">
-                            Your dashboard is active in another tab.
-                            To use it here, you'll need to claim the session.
-                        </p>
-                    </div>
-                    <div className="flex flex-col gap-3">
-                        <button
-                            onClick={takeAccess}
-                            className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 rounded-xl font-bold transition-all shadow-lg shadow-indigo-600/20 active:scale-95"
-                        >
-                            Use Here
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
-    }
 
     // Fetch user ID from Supabase auth
     useEffect(() => {
@@ -85,16 +60,6 @@ export default function DashboardPage() {
         fetchUser();
     }, []);
 
-    // Navigation Handler
-    const handleNavigate = (view: DashboardView) => {
-        if (view === 'pricing') {
-            router.push('/pricing');
-            return;
-        }
-        setCurrentView(view);
-        setIsProfileMenuOpen(false);
-    };
-
     // Close profile menu on outside click
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -105,6 +70,16 @@ export default function DashboardPage() {
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
+    // Navigation Handler
+    const handleNavigate = (view: DashboardView) => {
+        if (view === 'pricing') {
+            router.push('/pricing');
+            return;
+        }
+        setCurrentView(view);
+        setIsProfileMenuOpen(false);
+    };
 
     const handleLogout = async () => {
         await signOut();
@@ -131,6 +106,40 @@ export default function DashboardPage() {
         }
     };
 
+    // EARLY RETURNS MUST COME AFTER ALL HOOKS
+    if (hasAnotherTab) {
+        return (
+            <div className="flex h-screen w-full items-center justify-center bg-[#0a0a0a] text-white p-6">
+                <div className="max-w-md w-full text-center space-y-8 animate-scale-in">
+                    <div className="w-20 h-20 bg-indigo-500/10 rounded-3xl flex items-center justify-center mx-auto ring-1 ring-indigo-500/30">
+                        <Share2 className="w-10 h-10 text-indigo-500" />
+                    </div>
+                    <div>
+                        <h1 className="text-3xl font-bold tracking-tight mb-2">
+                            {canTakeAccess ? 'Dashboard Open Elsewhere' : 'Session Moved'}
+                        </h1>
+                        <p className="text-gray-400 font-sans leading-relaxed">
+                            {canTakeAccess 
+                                ? 'Your dashboard is active in another tab. To use it here, you\'ll need to claim the session.'
+                                : 'This session is now active in another tab. Please use that tab or close this one.'}
+                        </p>
+                    </div>
+                    <div className="flex flex-col gap-3">
+                        {canTakeAccess && (
+                            <button
+                                onClick={takeAccess}
+                                className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 rounded-xl font-bold transition-all shadow-lg shadow-indigo-600/20 active:scale-95"
+                            >
+                                Use Here
+                            </button>
+                        )}
+                        <p className="text-sm text-gray-500">Close this tab</p>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     if (isLoading) {
         return (
             <div className="flex h-screen w-full items-center justify-center bg-app-bg">
@@ -141,7 +150,7 @@ export default function DashboardPage() {
 
     if (setupMode) {
         return <StudioSetup
-            onEnterStudio={(name, cam, mic, vConfig) => handleNavigateToStudio(`room-${Date.now()}`, name, setupMode, vConfig)}
+            onEnterStudio={(name, cam, mic, vConfig, resolution, frameRate, recordingConfig) => handleNavigateToStudio(`room-${Date.now()}`, name, setupMode, vConfig)}
             defaultName="Host"
             isMeeting={setupMode === 'meeting'}
         />;

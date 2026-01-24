@@ -1,9 +1,10 @@
-import { AuthSession, Room, RoomMode, Destination } from '@/types';
+import { AuthSession, Room, RoomMode, Destination, Tier } from '@/types';
 
 // Use environment variable or default to localhost
-const API_BASE = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080/api';
+// Next.js uses NEXT_PUBLIC_ prefix for client-side env vars
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api';
 // Core service URL for OAuth (OAuth routes are on core service directly)
-const CORE_API_BASE = (import.meta as any).env?.VITE_CORE_API_URL || 'http://localhost:8081/api';
+const CORE_API_BASE = process.env.NEXT_PUBLIC_CORE_API_URL || 'http://localhost:8081/api';
 
 export interface OAuthProvider {
     name: string;
@@ -225,6 +226,13 @@ export class ApiClient {
         return this.request(`/stream/sessions/${roomId}/start`, { method: 'POST' });
     }
 
+    static async startBroadcastOrchestration(roomId: string, trackId: string): Promise<{ success: boolean; stream_port: number }> {
+        return this.request(`/rooms/${roomId}/broadcast/start`, {
+            method: 'POST',
+            body: JSON.stringify({ track_id: trackId })
+        }, true); // useCore = true
+    }
+
     static async stopStream(roomId: string): Promise<StreamSession> {
         return this.request(`/stream/sessions/${roomId}/stop`, { method: 'POST' });
     }
@@ -303,5 +311,98 @@ export class ApiClient {
             method: 'POST',
             body: JSON.stringify({ asset_id: assetId })
         });
+    }
+
+    // ==========================================
+    // TIER / SUBSCRIPTION
+    // ==========================================
+
+    /**
+     * Get user's current tier and limits
+     */
+    static async getUserTier(userId: string): Promise<{
+        tier: Tier;
+        limits: {
+            max_stage_participants: number;
+            max_total_participants: number;
+            max_destinations: number;
+            max_recording_duration_minutes: number;
+            recording_enabled: boolean;
+            iso_recording_enabled: boolean;
+            custom_rtmp_allowed: boolean;
+            max_resolution: string;
+            max_concurrent_streams: number;
+        };
+        subscription?: {
+            plan_id: string;
+            status: 'active' | 'canceled' | 'past_due' | 'trialing';
+            current_period_end: string;
+        };
+    }> {
+        return this.request(`/users/${userId}/tier`, {}, true);
+    }
+
+    /**
+     * Validate if an action is allowed based on user's tier
+     */
+    static async validateTierAction(userId: string, action: string, context: Record<string, any>): Promise<{
+        allowed: boolean;
+        reason?: string;
+        upgrade_suggestion?: {
+            tier: Tier;
+            message: string;
+        };
+    }> {
+        return this.request(`/users/${userId}/tier/validate`, {
+            method: 'POST',
+            body: JSON.stringify({ action, context })
+        }, true);
+    }
+
+    /**
+     * Get available upgrade options for a user
+     */
+    static async getUpgradeOptions(userId: string): Promise<{
+        current_tier: Tier;
+        options: Array<{
+            tier: Tier;
+            name: string;
+            price_monthly: number;
+            price_yearly: number;
+            highlights: string[];
+        }>;
+    }> {
+        return this.request(`/users/${userId}/tier/upgrade-options`, {}, true);
+    }
+
+    // ==========================================
+    // SESSION MANAGEMENT
+    // ==========================================
+
+    /**
+     * Register a new session (single session enforcement)
+     */
+    static async registerSession(userId: string, roomId: string, sessionId: string): Promise<{
+        success: boolean;
+        previous_session_terminated?: boolean;
+    }> {
+        return this.request('/sessions/register', {
+            method: 'POST',
+            body: JSON.stringify({ user_id: userId, room_id: roomId, session_id: sessionId })
+        }, true);
+    }
+
+    /**
+     * Release a session
+     */
+    static async releaseSession(sessionId: string): Promise<{ success: boolean }> {
+        return this.request(`/sessions/${sessionId}/release`, { method: 'POST' }, true);
+    }
+
+    /**
+     * Heartbeat for session keepalive
+     */
+    static async sessionHeartbeat(sessionId: string): Promise<{ success: boolean; active: boolean }> {
+        return this.request(`/sessions/${sessionId}/heartbeat`, { method: 'POST' }, true);
     }
 }

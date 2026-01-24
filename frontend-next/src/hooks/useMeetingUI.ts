@@ -42,7 +42,8 @@ export function useMeetingUI() {
 
     const handleCopyLink = useCallback((roomId: string) => {
         const baseUrl = window.location.origin;
-        const link = `${baseUrl}/join/${roomId}`;
+        // Include mode=meeting so guests join the correct mode
+        const link = `${baseUrl}/join/${roomId}?mode=meeting`;
         navigator.clipboard.writeText(link);
         setCopiedLink(true);
         setTimeout(() => setCopiedLink(false), 2000);

@@ -1,0 +1,61 @@
+# ALLSTRM Engine - Prometheus Configuration
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers: []
+
+rule_files: []
+
+scrape_configs:
+  # ALLSTRM Gateway metrics
+  - job_name: 'allstrm-gateway'
+    static_configs:
+      - targets: ['allstrm-gateway:8080']
+    metrics_path: /metrics
+    scrape_interval: 5s
+
+  # ALLSTRM SFU metrics
+  - job_name: 'allstrm-sfu'
+    static_configs:
+      - targets: ['allstrm-sfu:8082']
+    metrics_path: /metrics
+    scrape_interval: 5s
+
+  # ALLSTRM Core metrics
+  - job_name: 'allstrm-core'
+    static_configs:
+      - targets: ['allstrm-core:8081']
+    metrics_path: /metrics
+    scrape_interval: 5s
+
+  # ALLSTRM Stream metrics
+  - job_name: 'allstrm-stream'
+    static_configs:
+      - targets: ['allstrm-stream:8083']
+    metrics_path: /metrics
+    scrape_interval: 5s
+
+  # ALLSTRM Storage metrics
+  - job_name: 'allstrm-storage'
+    static_configs:
+      - targets: ['allstrm-storage:8084']
+    metrics_path: /metrics
+    scrape_interval: 5s
+
+  # PostgreSQL (if using postgres_exporter)
+  # - job_name: 'postgres'
+  #   static_configs:
+  #     - targets: ['postgres-exporter:9187']
+
+  # Redis (if using redis_exporter)
+  # - job_name: 'redis'
+  #   static_configs:
+  #     - targets: ['redis-exporter:9121']
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

@@ -1,0 +1,20 @@
+# ALLSTRM Stream Service - Development Dockerfile with Hot Reload
+FROM rust:1.92-slim-bookworm
+
+WORKDIR /app
+
+# Install dependencies including FFmpeg for streaming
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install cargo-watch for hot reload
+RUN cargo install cargo-watch --locked
+
+EXPOSE 8083
+EXPOSE 1935
+
+# Use cargo-watch to automatically rebuild and restart on file changes
+CMD ["cargo", "watch", "-x", "run -p allstrm-stream", "-w", "services/stream", "-w", "services/common", "-w", "services/protocol"]

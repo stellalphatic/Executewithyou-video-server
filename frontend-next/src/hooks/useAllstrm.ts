@@ -151,6 +151,9 @@ export function useAllstrm(options: UseAllstrmOptions): UseAllstrmReturn & {
     const [isLocalInWaitingRoom, setIsLocalInWaitingRoom] = useState(
         options.initialConfig?.role === 'guest'
     );
+    
+    // Track if SFU REST connection succeeded (not just if client exists)
+    const sfuSuccessfullyConnectedRef = useRef(false);
 
     useEffect(() => {
         console.log('[useAllstrm] Initialized with config:', options.initialConfig);
@@ -233,10 +236,20 @@ export function useAllstrm(options: UseAllstrmOptions): UseAllstrmReturn & {
     }, [getStreamWithConstraints]);
 
     // ... (Connect/Disconnect/Toggle Handlers - Unchanged)
-    const disconnect = useCallback(() => {
-        // Clean up SFU REST clients
+    const disconnect = useCallback(async () => {
+        console.log('[useAllstrm] disconnect called');
+        
+        // Reset SFU connection status
+        sfuSuccessfullyConnectedRef.current = false;
+        
+        // Clean up SFU REST clients - use leave() to properly notify backend
         if (sfuWebrtcManagerRef.current) {
-            sfuWebrtcManagerRef.current.cleanup();
+            try {
+                await sfuWebrtcManagerRef.current.leave();
+            } catch (e) {
+                console.warn('[useAllstrm] SFU leave failed:', e);
+                sfuWebrtcManagerRef.current.cleanup();
+            }
             sfuWebrtcManagerRef.current = null;
         }
         if (sfuClientRef.current) {
@@ -352,41 +365,53 @@ export function useAllstrm(options: UseAllstrmOptions): UseAllstrmReturn & {
                 setMyParticipantId(data.participantId);
                 setIsLocalInWaitingRoom(data.isInWaitingRoom);
                 if (data.participants?.length) {
-                    const existingParticipants: Participant[] = data.participants.map((p: any) => ({
-                        id: p.id || p.participant_id,
-                        room_id: data.roomId,
-                        display_name: p.displayName || p.display_name || p.name || 'Guest',
-                        role: p.role || 'guest',
-                        ingest_type: 'webrtc',
-                        media_state: {
-                            video_enabled: p.video_enabled ?? true,
-                            audio_enabled: p.audio_enabled ?? true,
-                            screen_sharing: false,
-                            connection_quality: 'good'
-                        },
-                        is_on_stage: true,
-                        is_in_waiting_room: false
-                    }));
+                    const existingParticipants: Participant[] = data.participants.map((p: any) => {
+                        // Guests join backstage by default (is_on_stage: false)
+                        // Only hosts/co-hosts are on stage by default
+                        const role = p.role || 'guest';
+                        const isOnStageDefault = role === 'host' || role === 'owner' || role === 'co_host';
+                        return {
+                            id: p.id || p.participant_id,
+                            room_id: data.roomId,
+                            display_name: p.displayName || p.display_name || p.name || 'Guest',
+                            role,
+                            ingest_type: 'webrtc',
+                            media_state: {
+                                video_enabled: p.video_enabled ?? true,
+                                audio_enabled: p.audio_enabled ?? true,
+                                screen_sharing: false,
+                                connection_quality: 'good'
+                            },
+                            is_on_stage: p.is_on_stage ?? p.isOnStage ?? isOnStageDefault,
+                            is_in_waiting_room: p.is_in_waiting_room ?? p.isInWaitingRoom ?? false
+                        };
+                    });
                     setParticipants(existingParticipants);
                 }
             });
 
             sfuWebrtcManager.on('participantsUpdate', (participants: any[]) => {
-                const updatedParticipants: Participant[] = participants.map((p: any) => ({
-                    id: p.id || p.participant_id || p.participantId,
-                    room_id: options.roomId,
-                    display_name: p.display_name || p.displayName || p.name || 'Guest',
-                    role: p.role || 'guest',
-                    ingest_type: 'webrtc',
-                    media_state: {
-                        video_enabled: p.video_enabled ?? p.videoEnabled ?? true,
-                        audio_enabled: p.audio_enabled ?? p.audioEnabled ?? true,
-                        screen_sharing: p.screen_sharing ?? p.screenSharing ?? false,
-                        connection_quality: p.connection_quality || p.connectionQuality || 'good'
-                    },
-                    is_on_stage: p.is_on_stage ?? p.isOnStage ?? true,
-                    is_in_waiting_room: p.is_in_waiting_room ?? p.isInWaitingRoom ?? false
-                }));
+                const updatedParticipants: Participant[] = participants.map((p: any) => {
+                    // Guests join backstage by default (is_on_stage: false)
+                    // Only hosts/co-hosts are on stage by default
+                    const role = p.role || 'guest';
+                    const isOnStageDefault = role === 'host' || role === 'owner' || role === 'co_host';
+                    return {
+                        id: p.id || p.participant_id || p.participantId,
+                        room_id: options.roomId,
+                        display_name: p.display_name || p.displayName || p.name || 'Guest',
+                        role,
+                        ingest_type: 'webrtc',
+                        media_state: {
+                            video_enabled: p.video_enabled ?? p.videoEnabled ?? true,
+                            audio_enabled: p.audio_enabled ?? p.audioEnabled ?? true,
+                            screen_sharing: p.screen_sharing ?? p.screenSharing ?? false,
+                            connection_quality: p.connection_quality || p.connectionQuality || 'good'
+                        },
+                        is_on_stage: p.is_on_stage ?? p.isOnStage ?? isOnStageDefault,
+                        is_in_waiting_room: p.is_in_waiting_room ?? p.isInWaitingRoom ?? false
+                    };
+                });
 
                 setParticipants(prev => {
                     // Simple deep compare to avoid re-renders if data hasn't changed
@@ -461,18 +486,22 @@ export function useAllstrm(options: UseAllstrmOptions): UseAllstrmReturn & {
             console.log('[useAllstrm] Joining SFU room:', { roomId: options.roomId, displayName, role, mode });
             await sfuWebrtcManager.join(options.roomId, displayName, role, mode);
             usingSFU = true;
+            sfuSuccessfullyConnectedRef.current = true;
             console.log('[useAllstrm] Successfully connected via SFU REST API');
 
         } catch (sfuError) {
             console.warn('[useAllstrm] SFU REST connection failed, falling back to WebSocket:', sfuError);
 
-            // Clean up failed SFU clients
+            // Clean up failed SFU WebRTC manager, but KEEP the sfuClientRef for REST API calls (admit, etc.)
             if (sfuWebrtcManagerRef.current) {
                 sfuWebrtcManagerRef.current.cleanup();
                 sfuWebrtcManagerRef.current = null;
             }
-            sfuClientRef.current = null;
+            // NOTE: We intentionally keep sfuClientRef so admit/leave REST calls still work
         }
+
+        // Store the SFU waiting room status before WebSocket fallback potentially overwrites it
+        const sfuWaitingRoomStatus = isLocalInWaitingRoom;
 
         // Fallback to WebSocket SignalClient if SFU failed
         if (!usingSFU) {
@@ -486,23 +515,46 @@ export function useAllstrm(options: UseAllstrmOptions): UseAllstrmReturn & {
             // Set up WebRTCManager event handlers
             webrtcManager.on('joined', (data: { participantId: string; roomId: string; participants: any[] }) => {
                 console.log('[useAllstrm] WS EVENT: joined', data);
-                setMyParticipantId(data.participantId);
+                // IMPORTANT: Only set myParticipantId if SFU didn't already set it
+                // The SFU participant ID (participant-XXXX) is needed for polling
+                // The WebSocket ID (part_XXXX) would break poll-based admit detection
+                setMyParticipantId(prev => {
+                    if (prev && prev.startsWith('participant-')) {
+                        console.log('[useAllstrm] Preserving SFU participant ID:', prev, '(ignoring WS ID:', data.participantId, ')');
+                        return prev;
+                    }
+                    return data.participantId;
+                });
+                
+                // CRITICAL: Preserve the waiting room status from SFU if it was set
+                // The WebSocket gateway doesn't know about waiting room, so we keep the SFU status
+                if (sfuWaitingRoomStatus !== undefined && sfuWaitingRoomStatus !== false) {
+                    console.log('[useAllstrm] Preserving SFU waiting room status:', sfuWaitingRoomStatus);
+                    // Don't change isLocalInWaitingRoom - keep it as SFU set it
+                }
+                
                 if (data.participants?.length) {
-                    const existingParticipants: Participant[] = data.participants.map((p: any) => ({
-                        id: p.id || p.participant_id || p.participantId,
-                        room_id: data.roomId,
-                        display_name: p.display_name || p.displayName || p.name || 'Guest',
-                        role: p.role || 'guest',
-                        ingest_type: 'webrtc',
-                        media_state: {
-                            video_enabled: p.video_enabled ?? p.videoEnabled ?? true,
-                            audio_enabled: p.audio_enabled ?? p.audioEnabled ?? true,
-                            screen_sharing: p.screen_sharing ?? p.screenSharing ?? false,
-                            connection_quality: p.connection_quality || p.connectionQuality || 'good'
-                        },
-                        is_on_stage: p.is_on_stage ?? p.isOnStage ?? true,
-                        is_in_waiting_room: p.is_in_waiting_room ?? p.isInWaitingRoom ?? false
-                    }));
+                    const existingParticipants: Participant[] = data.participants.map((p: any) => {
+                        // Guests join backstage by default (is_on_stage: false)
+                        // Only hosts/co-hosts are on stage by default
+                        const role = p.role || 'guest';
+                        const isOnStageDefault = role === 'host' || role === 'owner' || role === 'co_host';
+                        return {
+                            id: p.id || p.participant_id || p.participantId,
+                            room_id: data.roomId,
+                            display_name: p.display_name || p.displayName || p.name || 'Guest',
+                            role,
+                            ingest_type: 'webrtc',
+                            media_state: {
+                                video_enabled: p.video_enabled ?? p.videoEnabled ?? true,
+                                audio_enabled: p.audio_enabled ?? p.audioEnabled ?? true,
+                                screen_sharing: p.screen_sharing ?? p.screenSharing ?? false,
+                                connection_quality: p.connection_quality || p.connectionQuality || 'good'
+                            },
+                            is_on_stage: p.is_on_stage ?? p.isOnStage ?? isOnStageDefault,
+                            is_in_waiting_room: p.is_in_waiting_room ?? p.isInWaitingRoom ?? false
+                        };
+                    });
                     setParticipants(existingParticipants);
                 }
             });
@@ -512,11 +564,16 @@ export function useAllstrm(options: UseAllstrmOptions): UseAllstrmReturn & {
                 const id = data.participant_id || data.participantId || data.id;
                 if (!id) return;
 
+                // Guests join backstage by default (is_on_stage: false)
+                // Only hosts/co-hosts are on stage by default
+                const role = (data.role || 'guest') as Participant['role'];
+                const isOnStageDefault = role === 'host' || role === 'owner' || role === 'co_host';
+
                 const newParticipant: Participant = {
                     id,
                     room_id: options.roomId,
                     display_name: data.display_name || data.displayName || data.name || data.display_name_raw || 'Guest',
-                    role: (data.role || 'guest') as Participant['role'],
+                    role,
                     ingest_type: 'webrtc',
                     media_state: {
                         video_enabled: data.video_enabled ?? data.videoEnabled ?? true,
@@ -524,7 +581,7 @@ export function useAllstrm(options: UseAllstrmOptions): UseAllstrmReturn & {
                         screen_sharing: data.screen_sharing ?? data.screenSharing ?? false,
                         connection_quality: data.connection_quality || data.connectionQuality || 'good'
                     },
-                    is_on_stage: data.is_on_stage ?? data.isOnStage ?? true,
+                    is_on_stage: data.is_on_stage ?? data.isOnStage ?? isOnStageDefault,
                     is_in_waiting_room: data.is_in_waiting_room ?? data.isInWaitingRoom ?? false
                 };
                 setParticipants(prev => {
@@ -616,6 +673,151 @@ export function useAllstrm(options: UseAllstrmOptions): UseAllstrmReturn & {
 
     useEffect(() => { return () => { disconnect(); }; }, [disconnect]);
 
+    // Poll for participants periodically when connected
+    // This is a workaround until proper WebSocket broadcasting is implemented
+    // Only poll if we're NOT using the SFU REST client (which has its own polling)
+    useEffect(() => {
+        // Skip polling only if SFU REST API successfully connected (it has its own polling)
+        // If SFU failed and we fell back to WebSocket, we need polling
+        if (sfuSuccessfullyConnectedRef.current) {
+            console.log('[useAllstrm] Skipping participant polling - SFU REST API is connected');
+            return;
+        }
+        console.log('[useAllstrm] Starting participant polling (SFU not connected)');
+        
+        if (!isConnected || !options.roomId) return;
+
+        const pollParticipants = async () => {
+            try {
+                // Get token for API call
+                const { data: { session } } = await supabase.auth.getSession();
+                if (!session?.access_token) return;
+
+                // Call SFU API through gateway to get participants
+                const response = await fetch(`http://localhost:8080/api/v1/sfu/rooms/${options.roomId}/participants`, {
+                    headers: {
+                        'Authorization': `Bearer ${session.access_token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('[useAllstrm] Poll raw data:', data);
+                    
+                    // Handle both array and nested object format
+                    let participantsList = data.participants || data;
+                    if (!Array.isArray(participantsList)) {
+                        participantsList = [];
+                    }
+                    
+                    // Unwrap nested participant objects if needed
+                    participantsList = participantsList.map((item: any) => item.participant || item);
+                    
+                    // FILTER: Only keep SFU participants (participant-* IDs) to avoid duplicates from WebSocket/Core
+                    const sfuParticipants = participantsList.filter((p: any) => {
+                        const id = p.id || p.participantId || '';
+                        return id.startsWith('participant-');
+                    });
+                    
+                    console.log('[useAllstrm] Poll filtered:', {
+                        raw: participantsList.length,
+                        sfu: sfuParticipants.length,
+                        filteredOut: participantsList.filter((p: any) => !(p.id || p.participantId || '').startsWith('participant-')).map((p: any) => p.id)
+                    });
+                    
+                    // Check if local user was admitted (is_in_waiting_room changed to false)
+                    if (myParticipantId) {
+                        const localInPoll = sfuParticipants.find((p: any) => 
+                            (p.id || p.participantId) === myParticipantId
+                        );
+                        if (localInPoll) {
+                            const wasInWaitingRoom = localInPoll.is_in_waiting_room ?? localInPoll.isInWaitingRoom ?? false;
+                            // If poll says we're NOT in waiting room but state says we are, we were admitted!
+                            if (!wasInWaitingRoom && isLocalInWaitingRoom) {
+                                console.log('[useAllstrm] LOCAL USER ADMITTED! Updating isLocalInWaitingRoom to false');
+                                setIsLocalInWaitingRoom(false);
+                            }
+                        }
+                    }
+                    
+                    if (sfuParticipants.length > 0) {
+                        setParticipants(prev => {
+                            // Build map by ID (unique key since we filtered to SFU only)
+                            const participantMap = new Map<string, Participant>();
+                            
+                            // First, add all previous participants with participant-* IDs
+                            prev.filter(p => p.id.startsWith('participant-')).forEach(p => {
+                                participantMap.set(p.id, p);
+                            });
+                            
+                            // Then merge/update from poll data
+                            sfuParticipants.forEach((p: any) => {
+                                const id = p.id || p.participantId;
+                                if (!id) return;
+                                
+                                const displayName = p.displayName || p.display_name || p.name || 'Guest';
+                                const role = p.role || 'guest';
+                                const existing = participantMap.get(id);
+                                
+                                const isOnStageDefault = role === 'host' || role === 'owner' || role === 'co_host';
+                                
+                                participantMap.set(id, {
+                                    id,
+                                    room_id: options.roomId,
+                                    display_name: displayName,
+                                    role,
+                                    ingest_type: 'webrtc',
+                                    media_state: {
+                                        video_enabled: p.videoEnabled ?? p.video_enabled ?? existing?.media_state?.video_enabled ?? true,
+                                        audio_enabled: p.audioEnabled ?? p.audio_enabled ?? existing?.media_state?.audio_enabled ?? true,
+                                        screen_sharing: p.screenSharing ?? p.screen_share ?? false,
+                                        connection_quality: p.connectionQuality || p.connection_quality || 'good'
+                                    },
+                                    // CRITICAL: For is_on_stage, preserve existing state if set, otherwise use poll data
+                                    is_on_stage: existing?.is_on_stage ?? p.isOnStage ?? p.is_on_stage ?? isOnStageDefault,
+                                    // CRITICAL: Always use latest is_in_waiting_room from poll (for admit status)
+                                    is_in_waiting_room: p.isInWaitingRoom ?? p.is_in_waiting_room ?? false
+                                });
+                            });
+                            
+                            const newParticipants = Array.from(participantMap.values());
+                            
+                            // Check if there's actually a change (compare by stringified content)
+                            const prevJson = JSON.stringify(prev.map(p => ({ id: p.id, waiting: p.is_in_waiting_room, stage: p.is_on_stage })));
+                            const newJson = JSON.stringify(newParticipants.map(p => ({ id: p.id, waiting: p.is_in_waiting_room, stage: p.is_on_stage })));
+                            
+                            if (prevJson !== newJson) {
+                                console.log('[useAllstrm] Participants poll update:', {
+                                    prevCount: prev.length,
+                                    newCount: newParticipants.length,
+                                    participants: newParticipants.map(p => ({ 
+                                        id: p.id, 
+                                        name: p.display_name,
+                                        waiting: p.is_in_waiting_room, 
+                                        stage: p.is_on_stage 
+                                    }))
+                                });
+                                return newParticipants;
+                            }
+                            return prev;
+                        });
+                    }
+                }
+            } catch (e) {
+                // Silently fail - polling is best-effort
+                console.debug('[useAllstrm] Participant poll failed:', e);
+            }
+        };
+
+        // Poll every 3 seconds
+        const pollInterval = setInterval(pollParticipants, 3000);
+        // Initial poll immediately
+        pollParticipants();
+
+        return () => clearInterval(pollInterval);
+    }, [isConnected, options.roomId, myParticipantId, isLocalInWaitingRoom]);
+
     const toggleVideo = useCallback(() => {
         localStreamRef.current?.getVideoTracks().forEach(t => { t.enabled = !t.enabled; });
         setForceUpdate({});
@@ -632,12 +834,30 @@ export function useAllstrm(options: UseAllstrmOptions): UseAllstrmReturn & {
             screenStreamRef.current = stream;
             setScreenStream(stream);
             setPresentationState(p => ({ ...p, isPresentingFile: false }));
+            
+            // Send screen share to SFU
+            if (sfuWebrtcManagerRef.current) {
+                sfuWebrtcManagerRef.current.setScreenStream(stream);
+            } else if (webrtcManagerRef.current) {
+                // WebSocket fallback - add screen tracks to existing peer connections
+                peerConnectionsRef.current.forEach((pc: RTCPeerConnection) => {
+                    stream.getTracks().forEach(track => {
+                        pc.addTrack(track, stream);
+                    });
+                });
+            }
+            
             stream.getVideoTracks()[0].onended = () => { stopScreenShare(); };
         } catch (e) { console.error("Failed to share screen", e); }
     }, []);
 
     const stopScreenShare = useCallback(() => {
         if (screenStreamRef.current) {
+            // Notify SFU that screen share has stopped
+            if (sfuWebrtcManagerRef.current) {
+                sfuWebrtcManagerRef.current.setScreenStream(null);
+            }
+            
             screenStreamRef.current.getTracks().forEach(t => t.stop());
             screenStreamRef.current = null;
             setScreenStream(null);
@@ -675,6 +895,18 @@ export function useAllstrm(options: UseAllstrmOptions): UseAllstrmReturn & {
         canvas.height = 1080;
         presentationCanvasRef.current = canvas;
 
+        const setupPresentationStream = (stream: MediaStream) => {
+            screenStreamRef.current = stream;
+            setScreenStream(stream);
+            
+            // Send presentation stream to SFU
+            if (sfuWebrtcManagerRef.current) {
+                sfuWebrtcManagerRef.current.setScreenStream(stream);
+            }
+            
+            stream.getVideoTracks()[0].onended = () => stopScreenShare();
+        };
+
         if (isPdf) {
             try {
                 const arrayBuffer = await file.arrayBuffer();
@@ -685,9 +917,7 @@ export function useAllstrm(options: UseAllstrmOptions): UseAllstrmReturn & {
                 setPresentationState({ currentSlide: 1, totalSlides: doc.numPages, isPresentingFile: true });
                 await renderPdfPage(1);
                 const stream = canvas.captureStream(30);
-                screenStreamRef.current = stream;
-                setScreenStream(stream);
-                stream.getVideoTracks()[0].onended = () => stopScreenShare();
+                setupPresentationStream(stream);
             } catch (e) { console.error("Failed to load PDF", e); alert("Failed to load PDF file."); }
         } else {
             presentationRef.current = { currentSlide: 1, totalSlides: 12, fileName: file.name, isPdf: false };
@@ -725,9 +955,7 @@ export function useAllstrm(options: UseAllstrmOptions): UseAllstrmReturn & {
             const intervalId = window.setInterval(draw, 33);
             presentationIntervalRef.current = intervalId;
             const stream = canvas.captureStream(30);
-            screenStreamRef.current = stream;
-            setScreenStream(stream);
-            stream.getVideoTracks()[0].onended = () => stopScreenShare();
+            setupPresentationStream(stream);
         }
     }, [stopScreenShare]);
 
@@ -1052,8 +1280,12 @@ export function useAllstrm(options: UseAllstrmOptions): UseAllstrmReturn & {
             } catch {
                 await ApiClient.createStreamSession(options.roomId);
             }
-            // Start the stream
-            await ApiClient.startStream(options.roomId);
+            // Start the broadcast orchestration
+            const videoTrack = localStreamRef.current?.getVideoTracks()[0];
+            if (!videoTrack) throw new Error("No video track available to broadcast");
+
+            console.log('[useAllstrm] Orchestrating broadcast for track:', videoTrack.id);
+            await ApiClient.startBroadcastOrchestration(options.roomId, videoTrack.id);
             setBroadcastStatus('live');
         } catch (e) {
             console.error('[useAllstrm] Failed to start broadcast:', e);
@@ -1111,16 +1343,35 @@ export function useAllstrm(options: UseAllstrmOptions): UseAllstrmReturn & {
         }
     }, [broadcastStatus, options.roomId]);
     const admitParticipant = useCallback(async (id: string) => {
-        if (sfuClientRef.current) {
-            try {
-                await sfuClientRef.current.admitParticipant(id);
-                // The polling or socket update will reflect this, but we can update locally too
-                setParticipants(p => p.map(x => x.id === id ? { ...x, is_in_waiting_room: false } : x));
-            } catch (e) {
-                console.error('[useAllstrm] Failed to admit participant:', e);
-            }
+        console.log('[useAllstrm] admitParticipant called:', {
+            id,
+            hasSfuClient: !!sfuClientRef.current,
+            sfuRoomId: sfuClientRef.current?.roomId,
+            optionsRoomId: options.roomId
+        });
+        
+        // If we don't have an SFU client, create one just for this operation
+        let sfuClient = sfuClientRef.current;
+        if (!sfuClient) {
+            console.log('[useAllstrm] Creating temporary SFU client for admit');
+            sfuClient = new SFUClient();
         }
-    }, [setParticipants]);
+        
+        // Ensure the room ID is set (it might be null if WebRTC failed)
+        if (!sfuClient.roomId) {
+            console.log('[useAllstrm] Setting room ID on SFU client:', options.roomId);
+            sfuClient.setRoomId(options.roomId);
+        }
+        
+        try {
+            await sfuClient.admitParticipant(id);
+            console.log('[useAllstrm] Admit successful for:', id);
+            // The polling or socket update will reflect this, but we can update locally too
+            setParticipants(p => p.map(x => x.id === id ? { ...x, is_in_waiting_room: false } : x));
+        } catch (e) {
+            console.error('[useAllstrm] Failed to admit participant:', e);
+        }
+    }, [setParticipants, options.roomId]);
     const setPresetLayout = useCallback(async (n: string) => setLayoutState(s => s ? ({ ...s, preset_name: n }) : null), []);
     const updateLayout = useCallback(async () => { }, []);
     const prepareCamera = useCallback(async () => { }, []);

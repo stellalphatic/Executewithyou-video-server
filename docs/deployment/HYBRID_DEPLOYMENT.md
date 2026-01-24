@@ -2,15 +2,14 @@
 
 This guide explains how to deploy ALLSTRM using a hybrid architecture that combines cloud services with on-premise or edge computing for optimal performance and cost efficiency.
 
-## Deployment Modes
+## Deployment Architecture
 
-ALLSTRM supports three deployment modes:
+ALLSTRM uses a **hybrid deployment model** combining cloud and edge infrastructure:
 
-| Mode | Description | Best For |
-|------|-------------|----------|
-| **Cloud-Only** | All services run in cloud (AWS/GCP/Cloudflare) | Small-medium scale, simplicity |
-| **Hybrid** | Gateway + Core in cloud, SFU + Stream on edge | Low latency, cost optimization |
-| **Self-Hosted** | Everything on-premise or private cloud | Maximum control, compliance |
+| Layer | Components | Infrastructure |
+|-------|------------|----------------|
+| **Cloud** | Gateway, Core, Storage, Database | Auto-scaling cloud (AWS/GCP) |
+| **Edge** | SFU, Stream | Bare-metal servers for low latency |
 
 ## Recommended Hybrid Architecture
 

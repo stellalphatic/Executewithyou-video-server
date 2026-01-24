@@ -321,7 +321,7 @@ export const Meeting: React.FC<MeetingProps> = ({ config, onLeave }) => {
                         pinnedId={ui.pinnedId}
                         onPin={handlePin}
                         onContextMenu={(e, i, pid) => ui.setContextMenu({ x: e.clientX, y: e.clientY, itemId: i, participantId: pid })}
-                        viewPrefs={ui.viewPrefs} c
+                        viewPrefs={ui.viewPrefs}
                         onCropMouseDown={(e, id) => { if (!ui.isLayoutLocked) ui.setViewPrefs(p => ({ ...p, [id]: { ...(p[id] || { fit: 'cover', pan: { x: 50, y: 50 }, zoom: 1 }) } })); }}
                         onZoom={(id, delta) => ui.setViewPrefs(prev => { const c = prev[id] || { fit: 'cover', pan: { x: 50, y: 50 }, zoom: 1 }; return { ...prev, [id]: { ...c, zoom: Math.max(1, Math.min(3, c.zoom + delta)) } }; })}
                         audioLevels={media.audioLevels}

@@ -5,7 +5,7 @@
  * Handles WebRTC signaling via REST API calls to the SFU backend
  */
 
-const SFU_BASE = (import.meta as any).env?.VITE_SFU_URL || 'http://localhost:8080/api/v1/sfu';
+const SFU_BASE = process.env.NEXT_PUBLIC_SFU_URL || 'http://localhost:8080/api/v1/sfu';
 
 export interface IceServer {
     urls: string[];
@@ -14,25 +14,25 @@ export interface IceServer {
 }
 
 export interface TrackInfo {
-    trackId: string;
-    participantId: string;
+    track_id: string;
+    participant_id: string;
     kind: string;
     codec: string;
 }
 
 export interface ParticipantInfo {
     id: string;
-    displayName: string;
+    display_name: string;
     role: string;
 }
 
 export interface JoinResponse {
     success: boolean;
-    participantId: string;
-    isInWaitingRoom: boolean;
-    iceServers: IceServer[];
-    existingParticipants: ParticipantInfo[];
-    availableTracks: TrackInfo[];
+    participant_id: string;
+    is_in_waiting_room: boolean;
+    ice_servers: IceServer[];
+    existing_participants: ParticipantInfo[];
+    available_tracks: TrackInfo[];
 }
 
 export interface AnswerResponse {
@@ -51,13 +51,20 @@ type SFUEventHandler = (data: any) => void;
 export class SFUClient {
     private baseUrl: string;
     private token: string | null = null;
-    private roomId: string | null = null;
+    public roomId: string | null = null;  // Made public for external access
     private participantId: string | null = null;
     private listeners: Map<string, Set<SFUEventHandler>> = new Map();
     private pollInterval: number | null = null;
 
     constructor(url: string = SFU_BASE) {
         this.baseUrl = url;
+    }
+
+    /**
+     * Set room ID manually (useful when creating client for specific operations)
+     */
+    public setRoomId(roomId: string): void {
+        this.roomId = roomId;
     }
 
     /**
@@ -80,8 +87,8 @@ export class SFUClient {
                 ...(this.token ? { 'Authorization': `Bearer ${this.token}` } : {})
             },
             body: JSON.stringify({
-                participantId,
-                displayName,
+                participant_id: participantId,
+                display_name: displayName,
                 role,
                 mode
             })
@@ -95,12 +102,12 @@ export class SFUClient {
         const data: JoinResponse = await response.json();
         console.log('[SFUClient] Join response:', data);
         this.emit('joined', {
-            participantId: data.participantId,
+            participantId: data.participant_id,
             roomId,
-            isInWaitingRoom: data.isInWaitingRoom,
-            iceServers: data.iceServers,
-            participants: data.existingParticipants,
-            availableTracks: data.availableTracks
+            isInWaitingRoom: data.is_in_waiting_room,
+            iceServers: data.ice_servers,
+            participants: data.existing_participants,
+            availableTracks: data.available_tracks
         });
 
         return data;
@@ -121,9 +128,9 @@ export class SFUClient {
                 ...(this.token ? { 'Authorization': `Bearer ${this.token}` } : {})
             },
             body: JSON.stringify({
-                participantId: this.participantId,
+                participant_id: this.participantId,
                 sdp,
-                trackTypes
+                track_types: trackTypes
             })
         });
 
@@ -154,7 +161,7 @@ export class SFUClient {
                 ...(this.token ? { 'Authorization': `Bearer ${this.token}` } : {})
             },
             body: JSON.stringify({
-                participantId: this.participantId,
+                participant_id: this.participantId,
                 sdp
             })
         });
@@ -182,10 +189,10 @@ export class SFUClient {
                 ...(this.token ? { 'Authorization': `Bearer ${this.token}` } : {})
             },
             body: JSON.stringify({
-                participantId: this.participantId,
+                participant_id: this.participantId,
                 candidate: candidate.candidate,
-                sdpMid: candidate.sdpMid,
-                sdpMLineIndex: candidate.sdpMLineIndex
+                sdp_mid: candidate.sdpMid,
+                sdp_m_line_index: candidate.sdpMLineIndex
             })
         });
 
@@ -216,10 +223,10 @@ export class SFUClient {
                 ...(this.token ? { 'Authorization': `Bearer ${this.token}` } : {})
             },
             body: JSON.stringify({
-                participantId: this.participantId,
-                targetParticipantId,
-                trackKind,
-                trackId
+                participant_id: this.participantId,
+                target_participant_id: targetParticipantId,
+                track_kind: trackKind,
+                track_id: trackId
             })
         });
 
@@ -250,10 +257,10 @@ export class SFUClient {
                 ...(this.token ? { 'Authorization': `Bearer ${this.token}` } : {})
             },
             body: JSON.stringify({
-                participantId: this.participantId,
-                targetParticipantId,
-                trackKind,
-                trackId
+                participant_id: this.participantId,
+                target_participant_id: targetParticipantId,
+                track_kind: trackKind,
+                track_id: trackId
             })
         });
 
@@ -287,6 +294,27 @@ export class SFUClient {
     }
 
     /**
+     * Get participants in the waiting room
+     */
+    public async getWaitingParticipants(): Promise<{ participants: any[] }> {
+        if (!this.roomId) {
+            throw new Error('Not connected to a room');
+        }
+
+        const response = await fetch(`${this.baseUrl}/rooms/${this.roomId}/waiting`, {
+            headers: {
+                ...(this.token ? { 'Authorization': `Bearer ${this.token}` } : {})
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to get waiting participants: ${response.status}`);
+        }
+
+        return response.json();
+    }
+
+    /**
      * Leave the room
      */
     public async leave(): Promise<GenericResponse> {
@@ -295,6 +323,7 @@ export class SFUClient {
         }
 
         this.stopPolling();
+        console.log('[SFUClient] Leaving room:', this.roomId, 'participant:', this.participantId);
 
         try {
             const response = await fetch(`${this.baseUrl}/rooms/${this.roomId}/leave`, {
@@ -304,10 +333,11 @@ export class SFUClient {
                     ...(this.token ? { 'Authorization': `Bearer ${this.token}` } : {})
                 },
                 body: JSON.stringify({
-                    participantId: this.participantId
+                    participant_id: this.participantId  // snake_case for Rust backend
                 })
             });
 
+            console.log('[SFUClient] Leave response:', response.status);
             return response.json();
         } finally {
             this.roomId = null;
@@ -324,6 +354,8 @@ export class SFUClient {
             throw new Error('Not connected to a room');
         }
 
+        console.log('[SFUClient] Admitting participant:', targetParticipantId, 'from room:', this.roomId);
+
         const response = await fetch(`${this.baseUrl}/rooms/${this.roomId}/admit`, {
             method: 'POST',
             headers: {
@@ -331,15 +363,17 @@ export class SFUClient {
                 ...(this.token ? { 'Authorization': `Bearer ${this.token}` } : {})
             },
             body: JSON.stringify({
-                participantId: targetParticipantId
+                participant_id: targetParticipantId  // snake_case for Rust backend
             })
         });
 
         if (!response.ok) {
             const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+            console.error('[SFUClient] Admit failed:', error);
             throw new Error(error.error || `Failed to admit participant: ${response.status}`);
         }
 
+        console.log('[SFUClient] Admit successful');
         return response.json();
     }
 

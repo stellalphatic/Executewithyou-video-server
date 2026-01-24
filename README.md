@@ -1,27 +1,28 @@
 # ALLSTRM Backend
 
-Microservices-based backend for the ALLSTRM streaming platform. Built with Rust for high performance and reliability.
+Distributed backend for the ALLSTRM streaming platform. Built with Rust for high performance and reliability, featuring a Next.js frontend.
 
 ## Services
 
 | Service | Port | Description |
 |---------|------|-------------|
-| **Gateway** | 8080 | API Gateway, WebSocket, JWT validation, rate limiting |
-| **Core** | 8081 | Room management, users, organizations, destinations |
+| **Frontend** | 3000 | Next.js 16 UI for Meetings, Studio, and Dashboard |
+| **Gateway** | 8080 | API Gateway, WebSocket, JWT validation, Rate limiting |
+| **Core** | 8081 | Room management, Users, Organizations, Destinations |
 | **SFU** | 8082 | WebRTC Selective Forwarding Unit for real-time media |
 | **Stream** | 8083 | FFmpeg processing, RTMP ingest, HLS output |
-| **Storage** | 8084 | Recording management, presigned URLs, R2/S3 |
+| **Storage** | 8084 | Recording management, Presigned URLs, R2/S3 |
 
 ## Quick Start
 
 ### Prerequisites
 
-- Rust 1.75+
-- PostgreSQL 15+
-- Redis 7+
-- FFmpeg 6+ (for Stream service)
+- Docker
+- Docker Compose
 
-### Setup
+### Start Development Environment
+
+The entire stack (Frontend + Backend + Database + Redis) is configured to run with Docker Compose.
 
 ```bash
 # Clone and setup
@@ -29,45 +30,40 @@ git clone https://github.com/your-org/allstrm-backend.git
 cd allstrm-backend
 cp .env.example .env
 
-# Start infrastructure
-make docker-up
-
-# Run migrations
-make db-migrate
-
-# Build
-cargo build --workspace
-```
-
-### Run Services
-
-```bash
-# All services
+# Start all services (Frontend hot-reload enabled)
 make dev
-
-# Or individually
-cargo run --package allstrm-gateway
-cargo run --package allstrm-core
-cargo run --package allstrm-sfu
-cargo run --package allstrm-stream
-cargo run --package allstrm-storage
 ```
+
+Access the application:
+- **Frontend**: [http://localhost:3000](http://localhost:3000)
+- **API Gateway**: [http://localhost:8080](http://localhost:8080)
+
+### Makefile Commands
+
+| Command | Description |
+|---------|-------------|
+| `make dev` | Start all services in foreground (logs visible) |
+| `make up` | Start all services in background (detached) |
+| `make down` | Stop all services |
+| `make logs` | Follow logs for all services |
+| `make clean` | Stop services and remove volumes (RESET DATABASE) |
+| `make build` | Rebuild all Docker images |
 
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
+| [frontend-next/README.md](frontend-next/README.md) | Frontend-specific documentation |
 | [docs/README.md](docs/README.md) | Documentation index |
 | [docs/deployment/HYBRID_DEPLOYMENT.md](docs/deployment/HYBRID_DEPLOYMENT.md) | Hybrid deployment guide |
 | [docs/api/README.md](docs/api/README.md) | API reference |
 | [docs/architecture/DIAGRAMS.md](docs/architecture/DIAGRAMS.md) | Architecture diagrams |
-| [DATABASE.md](DATABASE.md) | Database setup guide |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Architecture overview |
 
 ## Project Structure
 
 ```
 allstrm-backend/
+├── frontend-next/    # Next.js 16 Frontend
 ├── services/
 │   ├── gateway/      # API Gateway
 │   ├── core/         # Business logic
@@ -78,99 +74,6 @@ allstrm-backend/
 │   └── common/       # Utilities
 ├── migrations/       # SQL migrations
 ├── docs/             # Documentation
-├── Makefile          # Dev commands
-└── Cargo.toml        # Workspace config
+├── Makefile          # Docker shortcuts
+└── docker-compose.services.yml # Main Docker config
 ```
-
-## Make Commands
-
-```bash
-make help          # Show all commands
-make dev           # Run all services
-make build         # Build release
-make test          # Run tests
-make db-migrate    # Run migrations
-make db-reset      # Reset database
-make docker-up     # Start PostgreSQL/Redis
-make docker-down   # Stop containers
-```
-
-## Configuration
-
-Key environment variables (see `.env.example` for full list):
-
-```bash
-# Database
-DATABASE_URL=postgres://allstrm:password@localhost:5432/allstrm
-
-# Redis
-REDIS_URL=redis://localhost:6379
-
-# Auth (Supabase)
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_JWT_SECRET=your-jwt-secret
-
-# Storage (Cloudflare R2)
-S3_ENDPOINT=https://account.r2.cloudflarestorage.com
-S3_BUCKET=allstrm-recordings
-S3_ACCESS_KEY=your-key
-S3_SECRET_KEY=your-secret
-
-# Service URLs (for Gateway)
-CORE_SERVICE_URL=http://localhost:8081
-SFU_SERVICE_URL=http://localhost:8082
-STREAM_SERVICE_URL=http://localhost:8083
-STORAGE_SERVICE_URL=http://localhost:8084
-```
-
-## Deployment
-
-ALLSTRM supports three deployment modes:
-
-1. **Cloud-Only**: All services in cloud
-2. **Hybrid**: Gateway/Core in cloud, SFU/Stream on edge
-3. **Self-Hosted**: Everything on-premise
-
-See [Hybrid Deployment Guide](docs/deployment/HYBRID_DEPLOYMENT.md) for details.
-
-## API Overview
-
-### REST Endpoints
-- `POST /api/v1/rooms` - Create room
-- `GET /api/v1/rooms/:id` - Get room
-- `POST /api/v1/rooms/:id/join` - Join room
-- `POST /api/v1/destinations` - Add stream destination
-- `GET /api/v1/recordings` - List recordings
-
-### WebSocket
-- `wss://host/ws` - Real-time signaling
-
-See [API Reference](docs/api/README.md) for complete documentation.
-
-## Development
-
-```bash
-# Format code
-cargo fmt --all
-
-# Lint
-cargo clippy --workspace
-
-# Check compilation
-cargo check --workspace
-
-# Run tests
-cargo test --workspace
-```
-
-## License
-
-MIT
-
-## Contributing
-
-1. Fork the repository
-2. Create feature branch (`git checkout -b feature/name`)
-3. Commit changes (`git commit -m 'Add feature'`)
-4. Push to branch (`git push origin feature/name`)
-5. Open Pull Request

@@ -3,16 +3,18 @@
 
 import React, { useEffect, useRef } from 'react';
 import { Participant } from '@/types';
-import { Mic, MicOff, Video, VideoOff, Wifi, Plus, MonitorUp } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, Wifi, Plus, MonitorUp, UserCheck, Clock } from 'lucide-react';
 import { CueSystem } from './CueSystem';
 import { useBackstage } from '@/hooks/useBackstage';
 
 interface GreenRoomProps {
     participants: Participant[];
+    waitingParticipants?: Participant[]; // Participants in waiting room
     localParticipantId: string;
     onToggleAudio: () => void;
     onToggleVideo: () => void;
     onAddToStage?: (participantId: string) => void;
+    onAdmitParticipant?: (participantId: string) => void; // Admit from waiting room
     onContextMenu?: (e: React.MouseEvent, participantId: string) => void;
     localStream: MediaStream | null;
     isLocalOnStage?: boolean; // New prop
@@ -53,11 +55,13 @@ const GreenRoomVideo = ({ stream, isLocal }: { stream: MediaStream | null, isLoc
 
 export const GreenRoom: React.FC<GreenRoomProps> = ({ 
     participants, 
+    waitingParticipants = [],
     localParticipantId, 
     localStream,
     onToggleAudio,
     onToggleVideo,
     onAddToStage,
+    onAdmitParticipant,
     onContextMenu,
     isLocalOnStage = false
 }) => {
@@ -192,6 +196,58 @@ export const GreenRoom: React.FC<GreenRoomProps> = ({
                     <div className="text-center py-8 text-content-low text-xs italic">
                         No other guests backstage.
                     </div>
+                )}
+
+                {/* Waiting Room Section */}
+                {waitingParticipants.length > 0 && (
+                    <>
+                        <div className="h-px bg-app-border w-full my-4" />
+                        <div className="flex items-center gap-2 mb-3">
+                            <Clock className="w-3.5 h-3.5 text-amber-500" />
+                            <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">
+                                Waiting Room ({waitingParticipants.length})
+                            </span>
+                        </div>
+                        
+                        {waitingParticipants.map(p => (
+                            <div 
+                                key={p.id} 
+                                className="bg-amber-500/5 border border-amber-500/30 rounded-lg overflow-hidden shadow-sm group relative"
+                                onContextMenu={(e) => onContextMenu?.(e, p.id)}
+                            >
+                                <div className="aspect-video bg-black relative">
+                                    <div className="w-full h-full bg-gray-900 flex items-center justify-center relative overflow-hidden">
+                                        <div className="absolute inset-0 opacity-20 bg-noise"></div>
+                                        <div className="w-10 h-10 rounded-full bg-amber-500/30 flex items-center justify-center text-sm font-bold text-amber-300 relative z-10">
+                                            {p.display_name.substring(0, 2).toUpperCase()}
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="absolute top-2 left-2 bg-amber-600 px-2 py-0.5 rounded text-[9px] font-bold text-white uppercase tracking-wider z-10">
+                                        Waiting
+                                    </div>
+
+                                    {/* Hover Overlay - Admit Button */}
+                                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[1px] z-20">
+                                        {onAdmitParticipant && (
+                                            <button 
+                                                onClick={() => onAdmitParticipant(p.id)}
+                                                className="flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-lg transform scale-95 group-hover:scale-100 transition-transform"
+                                            >
+                                                <UserCheck className="w-3 h-3" />
+                                                ADMIT
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="p-2 flex items-center justify-between bg-app-surface border-t border-amber-500/20">
+                                    <span className="text-xs font-bold text-content-high truncate max-w-[100px]">{p.display_name}</span>
+                                    <span className="text-[9px] font-mono text-amber-500 px-1.5 py-0.5 border border-amber-500/30 rounded uppercase">{p.role}</span>
+                                </div>
+                            </div>
+                        ))}
+                    </>
                 )}
             </div>
         </div>

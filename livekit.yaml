@@ -1,0 +1,39 @@
+# LiveKit Server Configuration for ALLSTRM
+# Documentation: https://docs.livekit.io/realtime/self-hosting/deployment/
+
+port: 7880
+
+rtc:
+  port_range_start: 50100
+  port_range_end: 50200
+  # For local development, use local IP binding
+  use_external_ip: false
+  # Enable TCP fallback for restrictive networks
+  tcp_port: 7881
+
+keys:
+  devkey: devsecret
+  # In production, generate with: openssl rand -base64 32
+
+room:
+  enabled_codecs:
+    - mime: audio/opus
+    - mime: video/VP8
+    - mime: video/H264
+  max_participants: 50
+  empty_timeout: 300  # 5 minutes
+  departure_timeout: 20
+
+logging:
+  level: debug
+  # For debugging: level: debug
+
+# Redis for multi-node deployments
+# redis:
+#   address: redis:6379
+
+# Webhook notifications (optional)
+# webhook:
+#   urls:
+#     - https://your-api.com/livekit/webhook
+#   api_key: webhook_key

@@ -3,31 +3,38 @@
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 // ... imports (same as before)
-import { 
-    Mic, MicOff, Video, VideoOff, MonitorUp, 
+import {
+    Mic, MicOff, Video, VideoOff, MonitorUp,
     LayoutGrid, Settings, MoreVertical, Share2,
     X, Plus, Trash2, Eye, EyeOff,
     Lock, Unlock, HelpCircle, ChevronDown, MoreHorizontal,
-    LogOut, UserMinus, UserPlus, Monitor, 
+    LogOut, UserMinus, UserPlus, Monitor,
     MessageSquare, Type, Image as ImageIcon, Users,
     FolderOpen, Film, Layers, Palette, Grid, Copy, Smartphone,
     Play, Square, Layout, Check, MousePointer2, AlertCircle, Wand2, Upload, Sliders, Activity, Keyboard, Disc, GripVertical, Box,
     Cpu, Wifi, HardDrive, BarChart3, Radio, StopCircle, Lock as LockIcon, RefreshCw, Pause, PlayCircle, ShieldAlert, Volume2, VolumeX, Send, UserCheck,
     FileVideo, Clock, CircleDot, UserX, Camera, FileText, ChevronLeft, ChevronRight, Maximize, Minimize, Move, StopCircle as StopIcon, ZoomIn, ZoomOut, Minus, Plus as PlusIcon,
-    ArrowRight, Globe
+    ArrowRight, Globe, AlertTriangle, Shield
 } from 'lucide-react';
-import { useAllstrm } from '@/hooks/useAllstrm';
+import { useAllstrmLiveKit } from '@/hooks/useAllstrmLiveKit';
 import { useStudioEngines } from '@/hooks/useStudioEngines';
 import { useUploadQueue } from '@/hooks/useUploadQueue';
 import { Button } from './Button';
-import { Participant, StudioConfiguration, BrandConfig, Banner, LayoutState, OverlayScope, Tier } from '@/types';
+import { Participant, StudioConfiguration, BrandConfig, Banner, LayoutState, OverlayScope, Tier, BRANDING_TIER_REQUIREMENTS, LogoPosition, LogoSize, OverlayType, TickerSpeed } from '@/types';
 import { Scene as EngineScene, SceneItem } from '../types/layout';
 import { Destinations } from './Destinations';
 import { VideoProcessor } from '@/utils/VideoProcessor';
-import { isFeatureEnabled, hasHostPermissions, getUpgradeMessage, FeatureId } from '@/utils/permissions';
+import { isFeatureEnabled, hasHostPermissions, getUpgradeMessage, FeatureId, GuestPermissionConfig, DEFAULT_GUEST_PERMISSIONS } from '@/utils/permissions';
 import { GreenRoom } from './GreenRoom/GreenRoom';
 import { UploadQueue } from './UploadQueue';
 import { calculateLayout } from '@/utils/layoutEngine';
+import { BrandingPanel } from './studio/BrandingPanel';
+import { OverlayPanel } from './studio/OverlayPanel';
+import { AllstrmWatermark } from './studio/AllstrmWatermark';
+import { DraggableOverlay } from './studio/DraggableOverlay';
+import { PrivateChatPanel } from './studio/PrivateChatPanel';
+import { StreamHealthMonitor } from './studio/StreamHealthMonitor';
+import { GuestPermissionsPanel } from './studio/GuestPermissionsPanel';
 
 // ... (Rest of interfaces and helper components remain unchanged until GreenRoom render)
 
@@ -40,8 +47,8 @@ declare global {
 interface Scene {
     id: string;
     name: string;
-    layout: string; 
-    participants: string[]; 
+    layout: string;
+    participants: string[];
     activeBanners: string[];
     background: string;
     brandConfig: BrandConfig;
@@ -51,8 +58,8 @@ interface Scene {
 type SettingsTab = 'general' | 'camera' | 'audio' | 'visual_effects' | 'recording' | 'hotkeys' | 'guests' | 'diagnostics';
 
 interface StudioProps {
-  config: StudioConfiguration;
-  onLeave: () => void;
+    config: StudioConfiguration;
+    onLeave: () => void;
 }
 
 interface ViewPreference {
@@ -89,20 +96,20 @@ const SceneCard: React.FC<any> = ({ title, type, isActive, onClick, participants
                 <Film className="w-4 h-4 opacity-50" />
             ) : (
                 <div className="grid grid-cols-2 gap-0.5 p-0.5 w-full h-full">
-                    {participants.length > 0 ? participants.slice(0, 4).map((_, i) => <div key={i} className="bg-indigo-500/40 rounded-[1px]" />) : <div className="bg-content-low/20 col-span-2 row-span-2" />}
+                    {participants.length > 0 ? participants.slice(0, 4).map((_: unknown, i: number) => <div key={i} className="bg-indigo-500/40 rounded-[1px]" />) : <div className="bg-content-low/20 col-span-2 row-span-2" />}
                 </div>
             )}
         </div>
         <div className="flex-1 min-w-0">
-             <div className={`text-xs font-bold truncate ${isActive ? 'text-indigo-400' : 'text-content-medium'}`}>{title}</div>
-             <div className="text-[9px] text-content-low uppercase tracking-wider">{participants.length} Sources</div>
+            <div className={`text-xs font-bold truncate ${isActive ? 'text-indigo-400' : 'text-content-medium'}`}>{title}</div>
+            <div className="text-[9px] text-content-low uppercase tracking-wider">{participants.length} Sources</div>
         </div>
     </div>
 );
 
 const LayoutButton = ({ icon, active, onClick, disabled, lockedMessage }: any) => (
-    <button 
-        onClick={!disabled ? onClick : undefined} 
+    <button
+        onClick={!disabled ? onClick : undefined}
         disabled={disabled}
         title={lockedMessage}
         className={`p-2 rounded transition-colors relative group
@@ -117,14 +124,14 @@ const LayoutButton = ({ icon, active, onClick, disabled, lockedMessage }: any) =
 
 const ControlBtn = ({ icon, label, isActiveState, danger, hotkey, className, ...props }: any) => (
     <div className="relative group">
-        <button 
+        <button
             className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-200 
-            ${danger 
-                ? 'bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white border border-red-500/20' 
-                : isActiveState === false 
-                    ? 'bg-red-500 text-white hover:bg-red-600 border border-transparent shadow-lg shadow-red-500/20' 
-                    : 'bg-app-surface text-content-high hover:bg-indigo-500 hover:text-white border border-app-border hover:border-indigo-500 hover:shadow-lg hover:shadow-indigo-500/20'
-            } ${className || ''}`}
+            ${danger
+                    ? 'bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white border border-red-500/20'
+                    : isActiveState === false
+                        ? 'bg-red-500 text-white hover:bg-red-600 border border-transparent shadow-lg shadow-red-500/20'
+                        : 'bg-app-surface text-content-high hover:bg-indigo-500 hover:text-white border border-app-border hover:border-indigo-500 hover:shadow-lg hover:shadow-indigo-500/20'
+                } ${className || ''}`}
             {...props}
         >
             {React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement<any>, { size: 20 }) : icon}
@@ -137,8 +144,8 @@ const ControlBtn = ({ icon, label, isActiveState, danger, hotkey, className, ...
 );
 
 const RailTab = ({ icon, label, active, onClick }: any) => (
-    <button 
-        onClick={onClick} 
+    <button
+        onClick={onClick}
         className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all relative group ${active ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/25' : 'text-content-medium hover:text-content-high hover:bg-app-bg'}`}
     >
         {React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement<any>, { size: 20 }) : icon}
@@ -153,8 +160,8 @@ const SectionHeader = ({ title }: { title: string }) => (
 );
 
 const ContextMenuItem = ({ icon, label, onClick, disabled, danger, title }: any) => (
-    <button 
-        onClick={onClick} 
+    <button
+        onClick={onClick}
         disabled={disabled}
         title={title}
         className={`w-full flex items-center gap-3 px-3 py-2 text-xs font-medium transition-colors text-left group
@@ -166,89 +173,6 @@ const ContextMenuItem = ({ icon, label, onClick, disabled, danger, title }: any)
         <span>{label}</span>
     </button>
 );
-
-const DraggableOverlay: React.FC<any> = ({ children, isDraggable, locked, initialX = 50, initialY = 50, onPositionChange, containerRef, className, style, stackIndex = 0 }) => {
-    const [pos, setPos] = useState({ x: initialX, y: initialY });
-    const [isDragging, setIsDragging] = useState(false);
-    const dragRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => { 
-        if (!isDragging) {
-            setPos({ x: initialX, y: initialY }); 
-        }
-    }, [initialX, initialY, isDragging]);
-    
-    const handleMouseDown = (e: React.MouseEvent) => { 
-        if (!isDraggable || locked) return; 
-        e.preventDefault(); 
-        e.stopPropagation(); 
-        setIsDragging(true); 
-    };
-    
-    const handleMouseMove = useCallback((e: MouseEvent) => { 
-        if (isDragging && dragRef.current) { 
-            const container = containerRef?.current || dragRef.current.offsetParent as HTMLElement;
-            if (!container) return;
-
-            const containerRect = container.getBoundingClientRect();
-            let newX = ((e.clientX - containerRect.left) / containerRect.width) * 100;
-            let newY = ((e.clientY - containerRect.top) / containerRect.height) * 100;
-            
-            const elemRect = dragRef.current.getBoundingClientRect();
-            const elemWidthPct = (elemRect.width / containerRect.width) * 100;
-            const elemHeightPct = (elemRect.height / containerRect.height) * 100;
-
-            const minX = elemWidthPct / 2;
-            const maxX = 100 - (elemWidthPct / 2);
-            const minY = elemHeightPct / 2;
-            const maxY = 100 - (elemHeightPct / 2);
-            
-            newX = Math.max(minX, Math.min(maxX, newX));
-            newY = Math.max(minY, Math.min(maxY, newY));
-            
-            setPos({ x: newX, y: newY }); 
-        } 
-    }, [isDragging, containerRef]);
-    
-    const handleMouseUp = useCallback(() => { 
-        if (isDragging) { 
-            setIsDragging(false); 
-            onPositionChange?.(pos.x, pos.y); 
-        } 
-    }, [isDragging, pos, onPositionChange]);
-
-    useEffect(() => { 
-        if (isDragging) { 
-            window.addEventListener('mousemove', handleMouseMove); 
-            window.addEventListener('mouseup', handleMouseUp); 
-        } 
-        return () => { 
-            window.removeEventListener('mousemove', handleMouseMove); 
-            window.removeEventListener('mouseup', handleMouseUp); 
-        }; 
-    }, [isDragging, handleMouseMove, handleMouseUp]);
-    
-    return ( 
-        <div 
-            ref={dragRef} 
-            onMouseDown={handleMouseDown} 
-            style={{ 
-                ...style, 
-                left: `${pos.x}%`, 
-                top: `${pos.y}%`, 
-                position: 'absolute', 
-                transform: 'translate(-50%, -50%)', 
-                cursor: isDraggable && !locked ? 'move' : 'default', 
-                zIndex: isDragging ? 1000 : ((Number(style?.zIndex ?? 50)) + Number(stackIndex)), 
-                pointerEvents: locked ? 'none' : 'auto',
-                transition: isDragging ? 'none' : 'top 0.1s linear, left 0.1s linear' 
-            }} 
-            className={`${className} ${isDragging ? 'ring-2 ring-indigo-500 shadow-xl' : ''} select-none`}
-        > 
-            {children} 
-        </div> 
-    );
-};
 
 const VideoFeed = ({ participant, stream, isLocal, minimal, objectFit, objectPosition, zoom = 1 }: { participant: Participant, stream: MediaStream | null, isLocal: boolean, minimal?: boolean, objectFit?: any, objectPosition?: any, zoom?: number }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -266,17 +190,17 @@ const VideoFeed = ({ participant, stream, isLocal, minimal, objectFit, objectPos
     const initials = participant.display_name
         ? participant.display_name.substring(0, 2).toUpperCase()
         : '??';
-    
-    const isVideoVisible = (participant.media_state.video_enabled || participant.id === 'screen') && (stream || (!isLocal && participant.id !== 'screen')); 
+
+    const isVideoVisible = (participant.media_state.video_enabled || participant.id === 'screen') && (stream || (!isLocal && participant.id !== 'screen'));
 
     return (
         <div className="w-full h-full bg-gray-900 relative flex items-center justify-center overflow-hidden">
-             {isVideoVisible && stream ? (
-                <video 
-                    ref={videoRef} 
-                    autoPlay 
-                    muted 
-                    playsInline 
+            {isVideoVisible && stream ? (
+                <video
+                    ref={videoRef}
+                    autoPlay
+                    muted
+                    playsInline
                     className={`w-full h-full ${isLocal && participant.id !== 'screen' ? 'transform scale-x-[-1]' : ''}`}
                     style={{
                         objectFit: objectFit || 'cover',
@@ -285,13 +209,13 @@ const VideoFeed = ({ participant, stream, isLocal, minimal, objectFit, objectPos
                         transition: 'transform 0.1s ease-out'
                     }}
                 />
-             ) : (
-                 <div className="absolute inset-0 flex items-center justify-center">
-                     <div className={`rounded-full bg-indigo-600 flex items-center justify-center font-bold text-white shadow-lg ${minimal ? 'w-8 h-8 text-xs' : 'w-20 h-20 text-2xl'}`}>
-                         {initials}
-                     </div>
-                 </div>
-             )}
+            ) : (
+                <div className="absolute inset-0 flex items-center justify-center">
+                    <div className={`rounded-full bg-indigo-600 flex items-center justify-center font-bold text-white shadow-lg ${minimal ? 'w-8 h-8 text-xs' : 'w-20 h-20 text-2xl'}`}>
+                        {initials}
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
@@ -309,10 +233,10 @@ export function Studio({ config, onLeave }: StudioProps) {
     // Let's assume useAllstrm is the new controller. 
     // Keeping this for now if 'performance' or 'recording' engine direct access is needed, 
     // but the layout logic is shifting.
-    const { mixer, broadcast, performance } = useStudioEngines(); 
+    const { mixer, broadcast, performance } = useStudioEngines();
     const { queue, addUpload, removeUpload, retryUpload } = useUploadQueue();
 
-    const stageRef = useRef<HTMLDivElement>(null); 
+    const stageRef = useRef<HTMLDivElement>(null);
     const isoVideoElRef = useRef<HTMLVideoElement | null>(null);
     const logoInputRef = useRef<HTMLInputElement>(null);
 
@@ -325,17 +249,67 @@ export function Studio({ config, onLeave }: StudioProps) {
     const [audioEnabled, setAudioEnabled] = useState(config.audioEnabled);
     const [videoEnabled, setVideoEnabled] = useState(config.videoEnabled);
     const [visualConfig, setVisualConfig] = useState(config.visualConfig);
-    
+
     const [brands, setBrands] = useState<BrandProfile[]>([
-        { id: 'brand-1', name: 'Brand 1', config: { color: '#0a4cc7', theme: 'bubble', showDisplayNames: true, showHeadlines: false, position: { x: 90, y: 10 }, scope: 'global', logoLocked: false } }
+        { id: 'brand-1', name: 'Brand 1', config: { 
+            color: '#0a4cc7', 
+            theme: 'bubble', 
+            showDisplayNames: true, 
+            showHeadlines: false, 
+            position: { x: 90, y: 10 }, 
+            scope: 'global', 
+            logoLocked: false,
+            // New fields
+            logoPosition: 'top-right' as LogoPosition,
+            logoSize: 'medium' as LogoSize,
+            logoBackgroundEnabled: false,
+            logoPadding: 8,
+            logoOpacity: 100,
+            showWatermark: tier < BRANDING_TIER_REQUIREMENTS.removeWatermark, // Enforced for FREE tier
+            watermarkPosition: 'bottom-right' as LogoPosition,
+            watermarkOpacity: 50,
+        } }
     ]);
     const [selectedBrandId, setSelectedBrandId] = useState('brand-1');
     const activeBrand = brands.find(b => b.id === selectedBrandId) || brands[0];
     const [showBrandMenu, setShowBrandMenu] = useState(false);
 
     const [banners, setBanners] = useState<Banner[]>([
-        { id: '1', text: 'Like and Subscribe', isTicker: false, isVisible: false, scope: 'global', locked: false, customColor: '#0a4cc7', customTextColor: '#ffffff', style: 'standard' },
-        { id: '2', text: 'Welcome to the Stream!', isTicker: true, isVisible: false, scope: 'global', locked: false, style: 'standard' },
+        { 
+            id: '1', 
+            text: 'Like and Subscribe', 
+            type: 'banner' as OverlayType,
+            isTicker: false, 
+            isVisible: false, 
+            scope: 'global', 
+            locked: false, 
+            backgroundColor: '#0a4cc7',
+            backgroundOpacity: 100,
+            textColor: '#ffffff',
+            customColor: '#0a4cc7', 
+            customTextColor: '#ffffff', 
+            style: 'standard',
+            fullWidth: false,
+            verticalOnly: false,
+        },
+        { 
+            id: '2', 
+            text: 'Welcome to the Stream!', 
+            type: 'ticker' as OverlayType,
+            isTicker: true, 
+            isVisible: false, 
+            scope: 'global', 
+            locked: false, 
+            style: 'standard',
+            backgroundColor: '#0a4cc7',
+            backgroundOpacity: 100,
+            textColor: '#ffffff',
+            fullWidth: true,
+            verticalOnly: true,
+            tickerSpeed: 'medium' as TickerSpeed,
+            minY: 70,
+            maxY: 100,
+        },
     ]);
     const [bannerInput, setBannerInput] = useState('');
     const [bannerColor, setBannerColor] = useState('#0a4cc7');
@@ -344,24 +318,24 @@ export function Studio({ config, onLeave }: StudioProps) {
     const [bannerStyle, setBannerStyle] = useState<'standard' | 'lower_third'>('standard');
     const [isTicker, setIsTicker] = useState(false);
     const [stageBackground, setStageBackground] = useState('#000000');
-    
+
     const [chatInput, setChatInput] = useState('');
 
     const [scenes, setScenes] = useState<Scene[]>([
-        { 
-            id: 'scene-1', 
-            name: 'Default Scene', 
-            layout: 'grid', 
-            participants: [], 
-            activeBanners: [], 
+        {
+            id: 'scene-1',
+            name: 'Default Scene',
+            layout: 'grid',
+            participants: [],
+            activeBanners: [],
             background: '#000000',
             brandConfig: brands[0].config,
-            bannerPositions: {} 
+            bannerPositions: {}
         }
     ]);
     const [activeSceneId, setActiveSceneId] = useState<string>('scene-1');
 
-    const [activeRightTab, setActiveRightTab] = useState<'brand' | 'comments' | 'banners' | 'private_chat' | 'visual_effects' | 'recording' | 'mixer' | 'backstage'>('brand');
+    const [activeRightTab, setActiveRightTab] = useState<'brand' | 'comments' | 'banners' | 'private_chat' | 'visual_effects' | 'recording' | 'mixer' | 'backstage' | 'stream_health' | 'guests'>('brand');
     const [processorBackend, setProcessorBackend] = useState<'webgl' | 'webcodecs' | 'canvas' | 'none'>('none');
 
     // Viewport Controls (Global map of prefs per ID)
@@ -378,7 +352,7 @@ export function Studio({ config, onLeave }: StudioProps) {
                 setProcessorBackend('webgl');
                 return;
             }
-        } catch {}
+        } catch { }
         console.log('[VideoProcessor] Using Canvas 2D backend');
         setProcessorBackend('canvas');
     }, []);
@@ -387,21 +361,25 @@ export function Studio({ config, onLeave }: StudioProps) {
         detectAndSetBackend();
     }, [detectAndSetBackend]);
 
-    const [layoutLocked, setLayoutLocked] = useState(false); 
+
+
+    const [layoutLocked, setLayoutLocked] = useState(false);
     const [onStageParticipants, setOnStageParticipants] = useState<Participant[]>([]);
     const [draggedParticipantIndex, setDraggedParticipantIndex] = useState<number | null>(null);
 
     const [isDestinationModalOpen, setIsDestinationModalOpen] = useState(false);
+    const [showNoDestinationsPrompt, setShowNoDestinationsPrompt] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>('general');
-    
+
     const [recFormat, setRecFormat] = useState('video/webm');
     const [progRecStatus, setProgRecStatus] = useState<'idle' | 'recording' | 'paused'>('idle');
     const [isoRecStatus, setIsoRecStatus] = useState<'idle' | 'recording' | 'paused'>('idle');
     const [recordingTime, setRecordingTime] = useState(0);
-    const [showRecMenu, setShowRecMenu] = useState(false); 
+    const [showRecMenu, setShowRecMenu] = useState(false);
     const [recIsoSelection, setRecIsoSelection] = useState<string[]>([]);
-    
+    const [recordingDestination, setRecordingDestination] = useState<'local' | 'cloud' | 'both'>('local');
+
     const [audioMixerState, setAudioMixerState] = useState<Record<string, { volume: number, muted: boolean, peak: number }>>({
         'local': { volume: 100, muted: false, peak: 0 },
         'master': { volume: 100, muted: false, peak: 0 }
@@ -414,32 +392,111 @@ export function Studio({ config, onLeave }: StudioProps) {
     // Processed Stream State for Local Preview
     const [processedLocalStream, setProcessedLocalStream] = useState<MediaStream | null>(null);
     const [shareMenuOpen, setShareMenuOpen] = useState(false);
+    const [inviteLinkCopied, setInviteLinkCopied] = useState(false);
+    
+    // Guest Permissions (configurable by host)
+    const [guestPermissions, setGuestPermissions] = useState<GuestPermissionConfig>(DEFAULT_GUEST_PERMISSIONS);
+    
+    const handleUpdateGuestPermissions = useCallback((updates: Partial<GuestPermissionConfig>) => {
+        setGuestPermissions(prev => ({ ...prev, ...updates }));
+        // TODO: Broadcast permission changes to all guests via signaling
+        console.log('[GuestPermissions] Updated:', updates);
+    }, []);
+
+    // Copy invite link to clipboard - includes mode=studio so guests join the studio
+    const copyInviteLink = useCallback(() => {
+        const origin = typeof window !== 'undefined' ? window.location.origin : '';
+        const inviteUrl = `${origin}/join/${config.roomId}?mode=studio`;
+        navigator.clipboard.writeText(inviteUrl).then(() => {
+            setInviteLinkCopied(true);
+            setTimeout(() => setInviteLinkCopied(false), 2000);
+        }).catch(err => console.error('Failed to copy invite link:', err));
+    }, [config.roomId]);
+
+    // Memoize the error handler to prevent infinite re-renders
+    const handleAllstrmError = useCallback((err: Error) => {
+        console.error("Studio Error:", err);
+    }, []);
+
+    // Memoize initialConfig to prevent identity changes
+    const memoizedConfig = useMemo(() => config, [
+        config.roomId,
+        config.displayName,
+        config.role,
+        config.tier,
+        config.audioEnabled,
+        config.videoEnabled,
+        config.videoDeviceId,
+        config.audioDeviceId,
+        config.resolution,
+        config.frameRate,
+        config.mode
+    ]);
 
     const {
         isConnected, isConnecting, participants, localStream, remoteStreams, layoutState, screenStream,
         connect, disconnect, toggleVideo, toggleAudio, setPresetLayout, prepareCamera,
         switchDevice, updateVideoConfig, replaceVideoTrack, toggleStageStatus, removeParticipant, muteParticipant, unmuteParticipant, stopParticipantVideo, startParticipantVideo,
-        broadcastStatus, destinations, startBroadcast, stopBroadcast, 
+        broadcastStatus, destinations, startBroadcast, stopBroadcast,
         addDestination, removeDestination, toggleDestination,
         chatMessages, sendChatMessage, myParticipantId,
         startScreenShare, stopScreenShare, startFilePresentation,
         nextSlide, prevSlide, presentationState,
-        activeRecordings, pausedRecordings, startRecording, stopRecording, pauseRecording, resumeRecording, 
-        updateRecordingScene // Import the new sync function
-    } = useAllstrm({
+        activeRecordings, pausedRecordings, startRecording, stopRecording, pauseRecording, resumeRecording,
+        updateRecordingScene, // Import the new sync function
+        admitParticipant, // For green room guest admission
+        isLocalInWaitingRoom // For guest waiting room overlay
+    } = useAllstrmLiveKit({
         roomId: config.roomId,
         displayName: config.displayName,
-        initialConfig: config,
-        onError: (err) => console.error("Studio Error:", err)
+        initialConfig: memoizedConfig,
+        onError: handleAllstrmError
     });
+
+    // Guest management callbacks (must be after useAllstrm to access participants)
+    const handleMuteAllGuests = useCallback(() => {
+        const guests = participants.filter(p => p.role === 'guest');
+        guests.forEach(guest => {
+            if (guest.media_state.audio_enabled) {
+                muteParticipant?.(guest.id);
+            }
+        });
+    }, [participants, muteParticipant]);
+    
+    const handleDisableAllGuestVideo = useCallback(() => {
+        const guests = participants.filter(p => p.role === 'guest');
+        guests.forEach(guest => {
+            if (guest.media_state.video_enabled) {
+                stopParticipantVideo?.(guest.id);
+            }
+        });
+    }, [participants, stopParticipantVideo]);
 
     // ... (Recording state effects)
 
     const processorRef = useRef<VideoProcessor | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const rawStreamRef = useRef<MediaStream | null>(null); 
+    const rawStreamRef = useRef<MediaStream | null>(null);
     const chatEndRef = useRef<HTMLDivElement>(null);
     const hasAutoAddedHost = useRef(false);
+
+    // --- HOST AUTHORITATIVE WIRING ---
+    useEffect(() => {
+        if (!isHost || !broadcast || !isConnected) return;
+
+        // Ensure broadcast engine is running
+        broadcast.startRendering();
+
+        // Get the composed stream (Program Feed)
+        const composedStream = broadcast.getStream();
+        if (composedStream) {
+            const videoTrack = composedStream.getVideoTracks()[0];
+            if (videoTrack) {
+                console.log('[Studio] Sending Composed Stream (Host Authoritative)');
+                replaceVideoTrack(videoTrack).catch(e => console.warn("Failed to replace video track", e));
+            }
+        }
+    }, [isHost, broadcast, isConnected, replaceVideoTrack]);
 
     // Helper to format time
     const formatTime = (seconds: number) => {
@@ -450,16 +507,16 @@ export function Studio({ config, onLeave }: StudioProps) {
 
     // Recording State Helpers
     const isRecording = activeRecordings.length > 0;
-    const recColor = activeRecordings.includes('mixed') 
-        ? 'border-red-500 text-red-500 bg-red-500/10' 
+    const recColor = activeRecordings.includes('mixed')
+        ? 'border-red-500 text-red-500 bg-red-500/10'
         : (activeRecordings.length > 0 ? 'border-amber-500 text-amber-500 bg-amber-500/10' : 'border-app-border text-content-medium bg-app-bg');
-    
-    const recLabel = activeRecordings.length === 2 
-        ? 'REC ALL' 
-        : activeRecordings.includes('mixed') 
-            ? 'REC PGM' 
-            : activeRecordings.includes('iso') 
-                ? 'REC ISO' 
+
+    const recLabel = activeRecordings.length === 2
+        ? 'REC ALL'
+        : activeRecordings.includes('mixed')
+            ? 'REC PGM'
+            : activeRecordings.includes('iso')
+                ? 'REC ISO'
                 : 'REC';
 
     // Recording Handlers
@@ -583,14 +640,14 @@ export function Studio({ config, onLeave }: StudioProps) {
         if (!contextMenu) return;
         const { participantId } = contextMenu;
         const isLocal = participantId === 'local';
-        
+
         switch (action) {
             case 'mute': isLocal ? handleToggleAudio() : muteParticipant(participantId); break;
             case 'video': isLocal ? handleToggleVideo() : stopParticipantVideo(participantId); break;
             case 'stage': handleStageToggle(participantId, !onStageParticipants.some(p => p.id === participantId)); break;
             case 'kick': if (!isLocal) removeParticipant(participantId); break;
-            case 'fit': setViewPrefs(prev => ({...prev, [participantId]: {...(prev[participantId] || {fit:'contain',pan:{x:50,y:50},zoom:1}), fit:'contain'}})); break;
-            case 'fill': setViewPrefs(prev => ({...prev, [participantId]: {...(prev[participantId] || {fit:'contain',pan:{x:50,y:50},zoom:1}), fit:'cover'}})); break;
+            case 'fit': setViewPrefs(prev => ({ ...prev, [participantId]: { ...(prev[participantId] || { fit: 'contain', pan: { x: 50, y: 50 }, zoom: 1 }), fit: 'contain' } })); break;
+            case 'fill': setViewPrefs(prev => ({ ...prev, [participantId]: { ...(prev[participantId] || { fit: 'contain', pan: { x: 50, y: 50 }, zoom: 1 }), fit: 'cover' } })); break;
             case 'stop_presenting': stopScreenShare(); break;
         }
         setContextMenu(null);
@@ -609,7 +666,7 @@ export function Studio({ config, onLeave }: StudioProps) {
         };
 
         const scene = calculateLayout(layoutInput, { width: 1920, height: 1080, gap: 16, margin: 16 });
-        
+
         // Add Overlays to Scene so Recording Engine can see them
         if (activeBrand.config.logoUrl) {
             scene.overlays.push({
@@ -618,12 +675,12 @@ export function Studio({ config, onLeave }: StudioProps) {
                 type: 'image',
                 x: activeBrand.config.position?.x ?? 90,
                 y: activeBrand.config.position?.y ?? 10,
-                width: 10, 
+                width: 10,
                 height: 10,
                 zIndex: 100
             });
         }
-        
+
         return scene;
     }, [onStageParticipants, screenStream, layoutState, viewPrefs, activeBrand]);
 
@@ -633,41 +690,63 @@ export function Studio({ config, onLeave }: StudioProps) {
     }, [unifiedScene, updateRecordingScene]);
 
     // Derived Context Vars
-    const contextTarget = contextMenu 
-        ? (contextMenu.participantId === 'local' 
+    const contextTarget = contextMenu
+        ? (contextMenu.participantId === 'local'
             ? onStageParticipants.find(p => p.id === 'local') || { id: 'local', media_state: { audio_enabled: audioEnabled, video_enabled: videoEnabled }, role: 'host', display_name: 'You' } as any
-            : participants.find(p => p.id === contextMenu.participantId)) 
+            : participants.find(p => p.id === contextMenu.participantId))
         : null;
-    
+
     const isTargetLocal = contextMenu?.participantId === 'local';
     const isTargetPresentation = contextMenu?.participantId === 'screen';
     const isTargetOnStage = contextMenu ? onStageParticipants.some(p => p.id === contextMenu.participantId) : false;
 
-    // Backstage
-    const backstageParticipants = participants.filter(p => !p.is_on_stage && !p.is_in_waiting_room);
+    // Backstage: participants not on stage but already admitted (exclude local which is managed separately)
+    const backstageParticipants = participants.filter(p => 
+        p.id !== 'local' && !p.is_on_stage && !p.is_in_waiting_room
+    );
+    
+    // Waiting Room: participants who need host approval
+    const waitingRoomParticipants = participants.filter(p => p.is_in_waiting_room);
+
+    // Debug logging for participants state
+    useEffect(() => {
+        console.log('[Studio] Participants state:', {
+            total: participants.length,
+            backstage: backstageParticipants.length,
+            waitingRoom: waitingRoomParticipants.length,
+            onStage: onStageParticipants.length,
+            participants: participants.map(p => ({
+                id: p.id,
+                name: p.display_name,
+                role: p.role,
+                is_on_stage: p.is_on_stage,
+                is_in_waiting_room: p.is_in_waiting_room
+            }))
+        });
+    }, [participants, backstageParticipants, waitingRoomParticipants, onStageParticipants]);
 
     // Add Host to stage by default when connected
     useEffect(() => {
         if (isConnected && !hasAutoAddedHost.current) {
-             const localP: Participant = { 
-                 id: 'local', 
-                 room_id: config.roomId,
-                 display_name: config.displayName, 
-                 role: config.role, 
-                 ingest_type: 'webrtc',
-                 is_on_stage: true,
-                 media_state: { 
-                     audio_enabled: config.audioEnabled, 
-                     video_enabled: config.videoEnabled, 
-                     screen_sharing: false, 
-                     connection_quality: 'excellent' 
-                 } 
-             };
-             setOnStageParticipants(prev => {
-                 if (prev.some(p => p.id === 'local')) return prev;
-                 return [...prev, localP];
-             });
-             hasAutoAddedHost.current = true;
+            const localP: Participant = {
+                id: 'local',
+                room_id: config.roomId,
+                display_name: config.displayName,
+                role: config.role,
+                ingest_type: 'webrtc',
+                is_on_stage: true,
+                media_state: {
+                    audio_enabled: config.audioEnabled,
+                    video_enabled: config.videoEnabled,
+                    screen_sharing: false,
+                    connection_quality: 'excellent'
+                }
+            };
+            setOnStageParticipants(prev => {
+                if (prev.some(p => p.id === 'local')) return prev;
+                return [...prev, localP];
+            });
+            hasAutoAddedHost.current = true;
         }
     }, [isConnected, config]);
 
@@ -727,19 +806,40 @@ export function Studio({ config, onLeave }: StudioProps) {
         toggleVideo();
         setOnStageParticipants(prev => prev.map(p => p.id === 'local' ? { ...p, media_state: { ...p.media_state, video_enabled: newState } } : p));
     };
-    const handleBroadcastToggle = () => { if (broadcastStatus === 'idle') startBroadcast(); else stopBroadcast(); };
+    
+    // Enhanced broadcast toggle with destination check
+    const handleBroadcastToggle = () => { 
+        if (broadcastStatus === 'idle') {
+            // Check if there are enabled destinations
+            const enabledDestinations = destinations.filter(d => d.enabled);
+            if (enabledDestinations.length === 0) {
+                // Show prompt to add destinations
+                setShowNoDestinationsPrompt(true);
+                return;
+            }
+            startBroadcast(); 
+        } else {
+            stopBroadcast(); 
+        }
+    };
+    
+    // Handle adding destinations from the prompt
+    const handleAddDestinationsFromPrompt = () => {
+        setShowNoDestinationsPrompt(false);
+        setIsDestinationModalOpen(true);
+    };
     const handleStageToggle = (participantId: string, isOnStage: boolean) => {
         if (isOnStage && onStageParticipants.length >= MAX_STAGE_PARTICIPANTS) { alert(`Stage is full.`); return; }
         if (participantId === 'local') {
-             setOnStageParticipants(prev => {
-                 const p = prev.find(x => x.id === 'local') || { id: 'local', display_name: config.displayName, role: config.role, media_state: { audio_enabled: audioEnabled, video_enabled: videoEnabled }, is_on_stage: false } as Participant;
-                 if (isOnStage) return prev.some(x => x.id === 'local') ? prev.map(x => x.id === 'local' ? {...x, is_on_stage: true} : x) : [...prev, {...p, is_on_stage: true}];
-                 else return prev.filter(x => x.id !== 'local');
-             });
+            setOnStageParticipants(prev => {
+                const p = prev.find(x => x.id === 'local') || { id: 'local', display_name: config.displayName, role: config.role, media_state: { audio_enabled: audioEnabled, video_enabled: videoEnabled }, is_on_stage: false } as Participant;
+                if (isOnStage) return prev.some(x => x.id === 'local') ? prev.map(x => x.id === 'local' ? { ...x, is_on_stage: true } : x) : [...prev, { ...p, is_on_stage: true }];
+                else return prev.filter(x => x.id !== 'local');
+            });
         } else {
             toggleStageStatus(participantId, isOnStage);
             setOnStageParticipants(prev => {
-                if (isOnStage) { const participant = participants.find(p => p.id === participantId); return participant ? [...prev, {...participant, is_on_stage: true}] : prev; }
+                if (isOnStage) { const participant = participants.find(p => p.id === participantId); return participant ? [...prev, { ...participant, is_on_stage: true }] : prev; }
                 return prev.filter(p => p.id !== participantId);
             });
         }
@@ -747,11 +847,75 @@ export function Studio({ config, onLeave }: StudioProps) {
 
     const updateActiveBrand = (updates: Partial<BrandConfig>) => { setBrands(brands.map(b => b.id === selectedBrandId ? { ...b, config: { ...b.config, ...updates } } : b)); };
     const toggleBanner = (id: string) => setBanners(banners.map(b => b.id === id ? { ...b, isVisible: !b.isVisible } : b));
-    const createBanner = () => { if (!bannerInput.trim()) return; setBanners([{ id: Date.now().toString(), text: bannerInput, isTicker: isTicker, isVisible: true, scope: bannerScope, customColor: bannerColor, customTextColor: bannerTextColor, locked: false, style: bannerStyle }, ...banners]); setBannerInput(''); setIsTicker(false); };
+    const addBanner = (banner: Omit<Banner, 'id'>) => {
+        setBanners([{ ...banner, id: Date.now().toString() }, ...banners]);
+    };
+    const updateBanner = (id: string, updates: Partial<Banner>) => {
+        setBanners(banners.map(b => b.id === id ? { ...b, ...updates } : b));
+    };
+    const createBanner = () => { 
+        if (!bannerInput.trim()) return; 
+        const newBanner: Banner = {
+            id: Date.now().toString(),
+            text: bannerInput,
+            type: isTicker ? 'ticker' : 'banner',
+            isTicker: isTicker,
+            isVisible: true,
+            scope: bannerScope,
+            backgroundColor: bannerColor,
+            backgroundOpacity: 100,
+            textColor: bannerTextColor,
+            customColor: bannerColor,
+            customTextColor: bannerTextColor,
+            locked: false,
+            style: bannerStyle,
+            fullWidth: isTicker,
+            verticalOnly: isTicker,
+            tickerSpeed: 'medium',
+            minY: isTicker ? 70 : undefined,
+            maxY: isTicker ? 100 : undefined,
+        };
+        setBanners([newBanner, ...banners]);
+        setBannerInput('');
+        setIsTicker(false);
+    };
     const deleteBanner = (id: string) => { setBanners(prev => prev.filter(b => b.id !== id)); };
-    const loadScene = (scene: Scene) => { setActiveSceneId(scene.id); setPresetLayout(scene.layout); setStageBackground(scene.background); updateActiveBrand(scene.brandConfig); const nextStage: Participant[] = []; scene.participants.forEach(pid => { if (pid === 'local') { const local = participants.find(p => p.id === 'local') || onStageParticipants.find(p => p.id === 'local'); if (local) nextStage.push({...local, is_on_stage: true}); } else { const p = participants.find(part => part.id === pid); if (p) { nextStage.push({...p, is_on_stage: true}); toggleStageStatus(pid, true); } } }); setOnStageParticipants(nextStage); setBanners(banners.map(b => ({ ...b, isVisible: scene.activeBanners.includes(b.id), position: scene.bannerPositions[b.id] || b.position }))); };
-    
+    const loadScene = (scene: Scene) => { setActiveSceneId(scene.id); setPresetLayout(scene.layout); setStageBackground(scene.background); updateActiveBrand(scene.brandConfig); const nextStage: Participant[] = []; scene.participants.forEach(pid => { if (pid === 'local') { const local = participants.find(p => p.id === 'local') || onStageParticipants.find(p => p.id === 'local'); if (local) nextStage.push({ ...local, is_on_stage: true }); } else { const p = participants.find(part => part.id === pid); if (p) { nextStage.push({ ...p, is_on_stage: true }); toggleStageStatus(pid, true); } } }); setOnStageParticipants(nextStage); setBanners(banners.map(b => ({ ...b, isVisible: scene.activeBanners.includes(b.id), position: scene.bannerPositions[b.id] || b.position }))); };
+
     const isLocalOnStage = onStageParticipants.some(p => p.id === 'local');
+
+    // Show waiting room overlay for guests who haven't been admitted yet
+    if (isLocalInWaitingRoom) {
+        return (
+            <div className="flex h-screen w-full items-center justify-center bg-app-bg text-content-high p-6">
+                <div className="max-w-md text-center animate-fade-in">
+                    <div className="w-20 h-20 bg-app-surface rounded-full flex items-center justify-center mx-auto mb-8 border border-app-border">
+                        <Users className="w-10 h-10 text-primary-500" />
+                    </div>
+                    <h1 className="text-3xl font-bold mb-4">Waiting to join</h1>
+                    <p className="text-content-medium mb-8 text-lg">The host will let you in shortly. Please stay on this page.</p>
+                    <div className="inline-flex items-center gap-3 px-5 py-3 bg-app-surface rounded-full border border-app-border text-sm text-content-medium">
+                        <div className="w-2.5 h-2.5 bg-primary-500 rounded-full animate-pulse" />
+                        <span>Connected to studio</span>
+                    </div>
+                    {localStream && (
+                        <div className="mt-8 rounded-xl overflow-hidden border border-app-border shadow-lg max-w-xs mx-auto">
+                            <video
+                                ref={(el) => { if (el && localStream) el.srcObject = localStream; }}
+                                autoPlay
+                                playsInline
+                                muted
+                                className="w-full aspect-video object-cover bg-black"
+                            />
+                            <div className="bg-app-surface px-4 py-2 text-sm text-content-medium">
+                                Preview - your camera is ready
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="flex h-screen bg-app-bg text-content-high font-sans overflow-hidden" onMouseUp={handleCropMouseUp}>
@@ -783,14 +947,55 @@ export function Studio({ config, onLeave }: StudioProps) {
                                     <ChevronDown className="w-3 h-3" />
                                 </div>
                                 {showRecMenu && (
-                                    <div className="absolute top-full mt-2 right-0 w-64 bg-app-surface border border-app-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in origin-top-right" onClick={(e) => e.stopPropagation()}>
+                                    <div className="absolute top-full mt-2 right-0 w-72 bg-app-surface border border-app-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in origin-top-right" onClick={(e) => e.stopPropagation()}>
+                                        {/* Program (Mixed) Recording */}
                                         <div className="p-3 border-b border-app-border/50">
                                             <div className="flex items-center justify-between mb-2">
                                                 <div className="flex items-center gap-2"><CircleDot className="w-4 h-4 text-red-500" /><span className="text-xs font-bold text-content-high">PROGRAM</span></div>
                                                 {progRecStatus === 'recording' && <span className="text-[10px] font-mono text-red-500 animate-pulse">LIVE</span>}
                                             </div>
                                             <div className="flex gap-2">
-                                                {progRecStatus === 'idle' ? (<Button size="sm" className="w-full h-8 text-[10px]" onClick={startProgramRecording}>START RECORDING</Button>) : (<><button className="flex-1 bg-app-bg border border-app-border rounded hover:bg-app-surface text-[10px] font-bold" onClick={progRecStatus === 'recording' ? pauseProgramRecording : resumeProgramRecording}>{progRecStatus === 'paused' ? 'RESUME' : 'PAUSE'}</button><button className="flex-1 bg-red-500 text-white rounded hover:bg-red-600 text-[10px] font-bold" onClick={stopProgramRecording}>STOP</button></>)}
+                                                {progRecStatus === 'idle' ? (<Button size="sm" className="w-full h-8 text-[10px]" onClick={startProgramRecording}>START RECORDING</Button>) : (<><button className="flex-1 bg-app-bg border border-app-border rounded hover:bg-app-surface text-[10px] font-bold h-8" onClick={progRecStatus === 'recording' ? pauseProgramRecording : resumeProgramRecording}>{progRecStatus === 'paused' ? 'RESUME' : 'PAUSE'}</button><button className="flex-1 bg-red-500 text-white rounded hover:bg-red-600 text-[10px] font-bold h-8" onClick={stopProgramRecording}>STOP</button></>)}
+                                            </div>
+                                        </div>
+                                        
+                                        {/* ISO (Individual Tracks) Recording */}
+                                        <div className="p-3 border-b border-app-border/50">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <div className="flex items-center gap-2"><Layers className="w-4 h-4 text-indigo-500" /><span className="text-xs font-bold text-content-high">ISO TRACKS</span></div>
+                                                {isoRecStatus === 'recording' && <span className="text-[10px] font-mono text-indigo-500 animate-pulse">LIVE</span>}
+                                            </div>
+                                            <div className="flex gap-2">
+                                                {isoRecStatus === 'idle' ? (<Button size="sm" variant="secondary" className="w-full h-8 text-[10px]" onClick={startIsoRecording}>START ISO REC</Button>) : (<><button className="flex-1 bg-app-bg border border-app-border rounded hover:bg-app-surface text-[10px] font-bold h-8" onClick={() => { pauseRecording('iso'); setIsoRecStatus('paused'); }}>{isoRecStatus === 'paused' ? 'RESUME' : 'PAUSE'}</button><button className="flex-1 bg-indigo-500 text-white rounded hover:bg-indigo-600 text-[10px] font-bold h-8" onClick={stopIsoRecording}>STOP</button></>)}
+                                            </div>
+                                            <p className="text-[9px] text-content-low mt-1.5">Records each participant separately for post-production</p>
+                                        </div>
+                                        
+                                        {/* Recording Destination Toggle */}
+                                        <div className="p-3">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <HardDrive className="w-4 h-4 text-emerald-500" />
+                                                <span className="text-xs font-bold text-content-high">SAVE TO</span>
+                                            </div>
+                                            <div className="flex gap-1">
+                                                <button 
+                                                    className={`flex-1 px-2 py-1.5 rounded text-[10px] font-bold transition-colors ${recordingDestination === 'local' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-app-bg border border-app-border text-content-medium hover:border-content-low'}`}
+                                                    onClick={() => setRecordingDestination('local')}
+                                                >
+                                                    Local
+                                                </button>
+                                                <button 
+                                                    className={`flex-1 px-2 py-1.5 rounded text-[10px] font-bold transition-colors ${recordingDestination === 'cloud' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-app-bg border border-app-border text-content-medium hover:border-content-low'}`}
+                                                    onClick={() => setRecordingDestination('cloud')}
+                                                >
+                                                    Cloud
+                                                </button>
+                                                <button 
+                                                    className={`flex-1 px-2 py-1.5 rounded text-[10px] font-bold transition-colors ${recordingDestination === 'both' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-app-bg border border-app-border text-content-medium hover:border-content-low'}`}
+                                                    onClick={() => setRecordingDestination('both')}
+                                                >
+                                                    Both
+                                                </button>
                                             </div>
                                         </div>
                                     </div>
@@ -811,18 +1016,18 @@ export function Studio({ config, onLeave }: StudioProps) {
                             derived from the Shared Layout Engine 'unifiedScene', instead of CSS Grid.
                         */}
                         {unifiedScene.items.length === 0 && <div className="absolute inset-0 text-white/30 flex flex-col items-center justify-center"><Monitor className="w-16 h-16 mb-4 opacity-50" /><p className="text-lg font-medium">Add to stage</p></div>}
-                        
+
                         {unifiedScene.items.map((item, idx) => {
-                            const p = onStageParticipants.find(x => x.id === item.id) 
+                            const p = onStageParticipants.find(x => x.id === item.id)
                                 || (item.id === 'screen' ? { id: 'screen', display_name: 'Presentation', media_state: { audio_enabled: false, video_enabled: true } } as any : null);
-                            
+
                             if (!p) return null;
 
                             const stream = item.id === 'local' ? (processedLocalStream || localStream) : (item.id === 'screen' ? screenStream : remoteStreams[item.id]);
                             const isLocal = item.id === 'local';
                             const isScreen = item.id === 'screen';
                             const isCover = item.fit === 'cover';
-                            
+
                             // Map 0-100 coords to CSS %
                             const style: React.CSSProperties = {
                                 position: 'absolute',
@@ -836,34 +1041,34 @@ export function Studio({ config, onLeave }: StudioProps) {
                             };
 
                             return (
-                                <div 
-                                    key={item.id} 
+                                <div
+                                    key={item.id}
                                     style={style}
                                     className={`bg-black overflow-hidden shadow-sm transition-all ${!layoutLocked ? 'hover:ring-2 hover:ring-white/20' : ''} ${isCover && !layoutLocked ? 'cursor-move' : ''}`}
                                     onContextMenu={(e) => handleContextMenu(e, item.id)}
                                     onMouseDown={isCover && !layoutLocked ? (e) => handleCropMouseDown(e, item.id) : undefined}
                                     onMouseMove={!layoutLocked ? handleCropMouseMove : undefined}
                                 >
-                                    <VideoFeed 
-                                        participant={p} 
-                                        stream={stream} 
-                                        isLocal={isLocal && !isScreen} 
+                                    <VideoFeed
+                                        participant={p}
+                                        stream={stream}
+                                        isLocal={isLocal && !isScreen}
                                         objectFit={item.fit}
                                         objectPosition={`${item.panX}% ${item.panY}%`}
                                         zoom={item.zoom}
                                     />
-                                    
+
                                     {/* Name Label */}
                                     {activeBrand.config.showDisplayNames && (
                                         <div className="absolute bottom-3 left-3 z-10 px-3 py-1.5 rounded font-bold text-xs backdrop-blur-sm bg-indigo-600 text-white" style={{ backgroundColor: activeBrand.config.color }}>
-                                            {p.display_name} 
+                                            {p.display_name}
                                             {isScreen && <span className="opacity-75 ml-1 font-normal">(Presentation)</span>}
                                         </div>
                                     )}
-                                    
+
                                     {/* Status Indicators */}
                                     {!p.media_state.audio_enabled && !isScreen && <div className="absolute top-3 right-3 z-30 bg-red-600 text-white p-1.5 rounded-full shadow-md animate-pulse"><MicOff className="w-3.5 h-3.5" /></div>}
-                                    
+
                                     {/* Zoom Controls */}
                                     {isCover && !layoutLocked && (
                                         <div className="absolute bottom-3 right-3 z-30 flex flex-col gap-2 items-end opacity-0 hover:opacity-100 transition-opacity">
@@ -877,28 +1082,110 @@ export function Studio({ config, onLeave }: StudioProps) {
                                 </div>
                             );
                         })}
-                        
-                        {/* Banners */}
-                        {banners.filter(b => b.isVisible).map((b, idx) => (
-                            <DraggableOverlay key={b.id} isDraggable={!b.locked} locked={layoutLocked} containerRef={stageRef} initialX={b.position?.x ?? 50} initialY={b.position?.y ?? (80 - (idx * 15))} onPositionChange={(x, y) => { setBanners(prev => prev.map(banner => banner.id === b.id ? { ...banner, position: { x, y } } : banner)); }} stackIndex={idx}>
-                                <div className="px-6 py-3 bg-white text-black shadow-xl rounded-lg font-bold text-lg pointer-events-auto" style={{ backgroundColor: b.customColor || activeBrand.config.color, color: b.customTextColor }}>{b.text}</div>
-                            </DraggableOverlay>
-                        ))}
+
+                        {/* Banners/Overlays */}
+                        {banners.filter(b => b.isVisible).map((b, idx) => {
+                            const isTicker = b.type === 'ticker' || b.isTicker;
+                            const bgOpacity = (b.backgroundOpacity ?? 100) / 100;
+                            const bgColor = b.backgroundColor || b.customColor || activeBrand.config.color;
+                            
+                            return (
+                                <DraggableOverlay 
+                                    key={b.id} 
+                                    isDraggable={!b.locked} 
+                                    locked={layoutLocked} 
+                                    containerRef={stageRef} 
+                                    initialX={b.fullWidth ? 50 : (b.position?.x ?? 50)} 
+                                    initialY={b.position?.y ?? (isTicker ? 90 : (80 - (idx * 15)))} 
+                                    onPositionChange={(x, y) => { setBanners(prev => prev.map(banner => banner.id === b.id ? { ...banner, position: { x, y } } : banner)); }} 
+                                    stackIndex={idx}
+                                    verticalOnly={b.verticalOnly}
+                                    fullWidth={b.fullWidth}
+                                    minY={b.minY}
+                                    maxY={b.maxY}
+                                >
+                                    {isTicker ? (
+                                        // Ticker rendering with scrolling animation
+                                        <div 
+                                            className="overflow-hidden pointer-events-auto"
+                                            style={{ 
+                                                backgroundColor: bgOpacity < 1 
+                                                    ? `rgba(${parseInt(bgColor.slice(1,3),16)}, ${parseInt(bgColor.slice(3,5),16)}, ${parseInt(bgColor.slice(5,7),16)}, ${bgOpacity})`
+                                                    : bgColor,
+                                                color: b.textColor || b.customTextColor || '#ffffff',
+                                            }}
+                                        >
+                                            <div 
+                                                className="whitespace-nowrap py-2 px-4 font-bold text-base animate-ticker"
+                                                style={{
+                                                    animationDuration: b.tickerSpeed === 'slow' ? '20s' : b.tickerSpeed === 'fast' ? '8s' : '12s',
+                                                }}
+                                            >
+                                                {b.text} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; {b.text} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; {b.text}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        // Standard banner rendering
+                                        <div 
+                                            className="px-6 py-3 shadow-xl rounded-lg font-bold text-lg pointer-events-auto" 
+                                            style={{ 
+                                                backgroundColor: bgOpacity < 1 
+                                                    ? `rgba(${parseInt(bgColor.slice(1,3),16)}, ${parseInt(bgColor.slice(3,5),16)}, ${parseInt(bgColor.slice(5,7),16)}, ${bgOpacity})`
+                                                    : bgColor,
+                                                color: b.textColor || b.customTextColor || '#ffffff',
+                                            }}
+                                        >
+                                            {b.text}
+                                        </div>
+                                    )}
+                                </DraggableOverlay>
+                            );
+                        })}
 
                         {/* Brand Logo Overlay */}
                         {activeBrand.config.logoUrl && (
                             <DraggableOverlay isDraggable={true} locked={layoutLocked} containerRef={stageRef} initialX={activeBrand.config.position?.x ?? 90} initialY={activeBrand.config.position?.y ?? 10} onPositionChange={(x, y) => updateActiveBrand({ position: { x, y } })} stackIndex={50} className="pointer-events-auto">
-                                <img src={activeBrand.config.logoUrl} alt="Logo" className="h-12 w-auto object-contain drop-shadow-md select-none" draggable={false} />
+                                <div 
+                                    className="flex items-center justify-center"
+                                    style={{
+                                        backgroundColor: activeBrand.config.logoBackgroundEnabled 
+                                            ? activeBrand.config.logoBackground 
+                                            : 'transparent',
+                                        padding: activeBrand.config.logoBackgroundEnabled 
+                                            ? `${activeBrand.config.logoPadding}px` 
+                                            : 0,
+                                        borderRadius: activeBrand.config.logoBackgroundEnabled ? '8px' : 0,
+                                    }}
+                                >
+                                    <img 
+                                        src={activeBrand.config.logoUrl} 
+                                        alt="Logo" 
+                                        className={`object-contain drop-shadow-md select-none ${
+                                            activeBrand.config.logoSize === 'small' ? 'h-8' :
+                                            activeBrand.config.logoSize === 'large' ? 'h-20' : 'h-12'
+                                        }`}
+                                        style={{ opacity: activeBrand.config.logoOpacity / 100 }}
+                                        draggable={false} 
+                                    />
+                                </div>
                             </DraggableOverlay>
                         )}
+
+                        {/* ALLSTRM Watermark - Always shown for FREE tier */}
+                        <AllstrmWatermark
+                            tier={tier}
+                            showWatermark={activeBrand.config.showWatermark}
+                            position={activeBrand.config.watermarkPosition}
+                            opacity={activeBrand.config.watermarkOpacity}
+                        />
                     </div>
 
                     <div className="mt-4 flex items-center gap-2">
-                         <LayoutButton icon={<Square className="w-4 h-4" />} active={layoutState?.preset_name === 'single'} onClick={() => setPresetLayout('single')} lockedMessage={layoutLocked ? "Layout Locked" : undefined} disabled={layoutLocked} />
-                         <LayoutButton icon={<Grid className="w-4 h-4" />} active={layoutState?.preset_name === 'grid'} onClick={() => setPresetLayout('grid')} lockedMessage={layoutLocked ? "Layout Locked" : undefined} disabled={layoutLocked} />
-                         <LayoutButton icon={<MonitorUp className="w-4 h-4" />} active={layoutState?.preset_name === 'pip'} onClick={() => setPresetLayout('pip')} lockedMessage={layoutLocked ? "Layout Locked" : undefined} disabled={layoutLocked} />
-                         <div className="h-4 w-px bg-app-border mx-2" />
-                         <button onClick={() => setLayoutLocked(!layoutLocked)} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${layoutLocked ? 'bg-amber-500/10 text-amber-500 border border-amber-500/50' : 'bg-app-bg border border-app-border text-content-medium hover:text-content-high'}`}>{layoutLocked ? <LockIcon className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}{layoutLocked ? 'Locked' : 'Lock'}</button>
+                        <LayoutButton icon={<Square className="w-4 h-4" />} active={layoutState?.preset_name === 'single'} onClick={() => setPresetLayout('single')} lockedMessage={layoutLocked ? "Layout Locked" : undefined} disabled={layoutLocked} />
+                        <LayoutButton icon={<Grid className="w-4 h-4" />} active={layoutState?.preset_name === 'grid'} onClick={() => setPresetLayout('grid')} lockedMessage={layoutLocked ? "Layout Locked" : undefined} disabled={layoutLocked} />
+                        <LayoutButton icon={<MonitorUp className="w-4 h-4" />} active={layoutState?.preset_name === 'pip'} onClick={() => setPresetLayout('pip')} lockedMessage={layoutLocked ? "Layout Locked" : undefined} disabled={layoutLocked} />
+                        <div className="h-4 w-px bg-app-border mx-2" />
+                        <button onClick={() => setLayoutLocked(!layoutLocked)} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${layoutLocked ? 'bg-amber-500/10 text-amber-500 border border-amber-500/50' : 'bg-app-bg border border-app-border text-content-medium hover:text-content-high'}`}>{layoutLocked ? <LockIcon className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}{layoutLocked ? 'Locked' : 'Lock'}</button>
                     </div>
                 </div>
 
@@ -907,21 +1194,26 @@ export function Studio({ config, onLeave }: StudioProps) {
                     <div className="flex items-center gap-3">
                         <ControlBtn icon={audioEnabled ? <Mic /> : <MicOff />} label={audioEnabled ? "Mute" : "Unmute"} isActiveState={audioEnabled} onClick={handleToggleAudio} hotkey="Ctrl+D" />
                         <ControlBtn icon={videoEnabled ? <Video /> : <VideoOff />} label={videoEnabled ? "Stop Cam" : "Start Cam"} isActiveState={videoEnabled} onClick={handleToggleVideo} hotkey="Ctrl+E" />
-                        
+
                         <div className="relative group">
-                            <ControlBtn 
-                                icon={screenStream ? <X className="text-red-500" /> : <MonitorUp />} 
-                                label={screenStream ? "Stop Share" : "Share"} 
+                            <ControlBtn
+                                icon={screenStream ? <X className="text-red-500" /> : <MonitorUp />}
+                                label={screenStream ? "Stop Share" : "Share"}
                                 isActiveState={true}
-                                onClick={() => { 
-                                    if(screenStream) stopScreenShare(); 
+                                onClick={() => {
+                                    if (screenStream) stopScreenShare();
                                     else setShareMenuOpen(!shareMenuOpen);
-                                }} 
+                                }}
                             />
                             {shareMenuOpen && !screenStream && (
-                                <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-app-surface border border-app-border rounded-lg shadow-xl p-1 z-50 animate-scale-in w-40">
-                                    <button onClick={() => { startScreenShare(); setShareMenuOpen(false); }} className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold hover:bg-app-bg rounded text-left whitespace-nowrap"><Monitor className="w-4 h-4 text-indigo-500"/> Share Screen</button>
-                                    <button onClick={() => { document.getElementById('pres-upload')?.click(); setShareMenuOpen(false); }} className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold hover:bg-app-bg rounded text-left whitespace-nowrap"><FileText className="w-4 h-4 text-emerald-500"/> Present File</button>
+                                <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-app-surface border border-app-border rounded-lg shadow-xl p-1 z-50 animate-scale-in w-48">
+                                    <button onClick={() => { startScreenShare(); setShareMenuOpen(false); }} className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold hover:bg-app-bg rounded text-left whitespace-nowrap"><Monitor className="w-4 h-4 text-indigo-500" /> Share Screen</button>
+                                    <button onClick={() => { document.getElementById('pres-upload')?.click(); setShareMenuOpen(false); }} className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold hover:bg-app-bg rounded text-left whitespace-nowrap"><FileText className="w-4 h-4 text-emerald-500" /> Present File</button>
+                                    <div className="h-px bg-app-border my-1" />
+                                    <button onClick={() => { copyInviteLink(); setShareMenuOpen(false); }} className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold hover:bg-app-bg rounded text-left whitespace-nowrap">
+                                        {inviteLinkCopied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4 text-amber-500" />}
+                                        {inviteLinkCopied ? 'Link Copied!' : 'Copy Invite Link'}
+                                    </button>
                                 </div>
                             )}
                             <input type="file" id="pres-upload" className="hidden" accept=".pdf,.pptx" onChange={handlePresentationUpload} />
@@ -951,7 +1243,7 @@ export function Studio({ config, onLeave }: StudioProps) {
                             <ContextMenuItem icon={isTargetLocal || contextMenu.participantId === 'local' ? (audioEnabled ? <Mic /> : <MicOff />) : (contextTarget?.media_state.audio_enabled ? <Mic /> : <MicOff />)} label={isTargetLocal ? (audioEnabled ? "Mute" : "Unmute") : (contextTarget?.media_state.audio_enabled ? "Mute Participant" : "Unmute Participant")} onClick={() => handleContextAction('mute')} />
                             <ContextMenuItem icon={isTargetLocal || contextMenu.participantId === 'local' ? (videoEnabled ? <Video /> : <VideoOff />) : (contextTarget?.media_state.video_enabled ? <Video /> : <VideoOff />)} label={isTargetLocal ? (videoEnabled ? "Stop Cam" : "Start Cam") : (contextTarget?.media_state.video_enabled ? "Stop Video" : "Start Video")} onClick={() => handleContextAction('video')} />
                             <ContextMenuItem icon={isTargetOnStage ? <UserMinus /> : <UserPlus />} label={isTargetOnStage ? "Remove from Stage" : "Add to Stage"} onClick={() => handleContextAction('stage')} />
-                            
+
                             <div className="px-3 py-1.5 text-[10px] font-bold text-content-low uppercase tracking-wider border-b border-app-border/50 border-t mt-1 mb-1 bg-app-bg/50">View Mode</div>
                             <ContextMenuItem icon={<Minimize />} label="Fit to Screen" onClick={() => handleContextAction('fit')} />
                             <ContextMenuItem icon={<Maximize />} label="Fill Frame" onClick={() => handleContextAction('fill')} />
@@ -964,68 +1256,104 @@ export function Studio({ config, onLeave }: StudioProps) {
 
             {isHost && (
                 <div className="w-80 bg-app-surface border-l border-app-border flex flex-col z-20 shadow-sm transition-all duration-300">
-                    {/* ... (Right Rail Tabs Logic - Brands, Banners, Chat, etc. - Unchanged) */}
+                    {/* Brand Panel - New enterprise-grade component */}
                     {activeRightTab === 'brand' && (
-                        <div className="flex-1 flex flex-col p-4 custom-scrollbar overflow-y-auto">
-                            <SectionHeader title="Brand Settings" />
-                            <div className="space-y-6">
-                                <div>
-                                    <label className="block text-xs font-bold text-content-medium uppercase mb-2">Brand Color</label>
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-lg overflow-hidden border border-app-border relative"><input type="color" value={activeBrand.config.color} onChange={(e) => updateActiveBrand({ color: e.target.value })} className="absolute -top-2 -left-2 w-16 h-16 cursor-pointer border-none p-0" /></div>
-                                        <input type="text" value={activeBrand.config.color} onChange={(e) => updateActiveBrand({ color: e.target.value })} className="flex-1 bg-app-bg border border-app-border rounded-lg px-3 py-2 text-sm font-mono text-content-high focus:outline-none" />
-                                    </div>
-                                </div>
-                                <div className="border-t border-app-border pt-4">
-                                    <label className="block text-xs font-bold text-content-medium uppercase mb-2">Logo</label>
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-16 h-16 bg-app-bg border border-app-border rounded-lg flex items-center justify-center relative overflow-hidden group">
-                                            {activeBrand.config.logoUrl ? (<img src={activeBrand.config.logoUrl} className="w-full h-full object-contain p-1" alt="Logo" />) : (<ImageIcon className="w-6 h-6 text-content-low" />)}
-                                            <button className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white" onClick={() => logoInputRef.current?.click()}><Upload className="w-4 h-4" /></button>
-                                        </div>
-                                        <div className="flex-1 space-y-2"><Button size="sm" variant="secondary" onClick={() => logoInputRef.current?.click()} className="w-full text-xs">Upload Logo</Button>{activeBrand.config.logoUrl && (<button onClick={() => updateActiveBrand({ logoUrl: undefined })} className="text-xs text-red-500 hover:text-red-400 w-full text-center">Remove</button>)}</div>
-                                        <input type="file" ref={logoInputRef} className="hidden" accept="image/*" onChange={handleLogoUpload} />
-                                    </div>
-                                </div>
-                                {/* ... (Rest of Brand settings unchanged) */}
-                            </div>
-                        </div>
+                        <BrandingPanel
+                            tier={tier}
+                            brandConfig={activeBrand.config}
+                            onUpdate={updateActiveBrand}
+                        />
                     )}
-                    {/* ... (Other Tabs Unchanged) */}
+                    
+                    {/* Overlays Panel - New enterprise-grade component */}
                     {activeRightTab === 'banners' && (
-                        <div className="flex-1 flex flex-col p-4 custom-scrollbar overflow-y-auto">
-                            <SectionHeader title="Banners" />
-                            <div className="space-y-4">
-                                <div className="space-y-2">
-                                    <textarea className="w-full bg-app-bg border border-app-border rounded-lg p-3 text-sm focus:outline-none focus:border-indigo-500 resize-none h-20" placeholder="Enter banner text..." value={bannerInput} onChange={(e) => setBannerInput(e.target.value)} onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); createBanner(); } }} />
-                                    <div className="flex justify-between items-center"><div className="flex items-center gap-2"><input type="checkbox" checked={isTicker} onChange={(e) => setIsTicker(e.target.checked)} className="rounded border-app-border bg-app-bg text-indigo-500 focus:ring-0" id="ticker-check" /><label htmlFor="ticker-check" className="text-xs text-content-medium cursor-pointer">Scroll as Ticker</label></div><button onClick={createBanner} disabled={!bannerInput.trim()} className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed">Add Banner</button></div>
-                                </div>
-                                <div className="space-y-2">
-                                    {banners.map(b => (
-                                        <div key={b.id} className={`p-3 rounded-lg border flex flex-col gap-2 transition-all ${b.isVisible ? 'bg-indigo-500/10 border-indigo-500/30' : 'bg-app-bg border-app-border opacity-70'}`}>
-                                            <div className="text-sm font-medium text-content-high line-clamp-2">{b.text}</div>
-                                            <div className="flex justify-between items-center pt-2 border-t border-dashed border-app-border/50">
-                                                <div className="flex gap-2"><button onClick={() => toggleBanner(b.id)} className={`text-[10px] font-bold uppercase tracking-wider ${b.isVisible ? 'text-indigo-400' : 'text-content-medium hover:text-content-high'}`}>{b.isVisible ? 'Hide' : 'Show'}</button><button onClick={() => deleteBanner(b.id)} className="text-content-medium hover:text-red-500"><Trash2 className="w-3 h-3" /></button></div>
-                                                {b.isTicker && <span className="text-[9px] bg-app-surface px-1.5 py-0.5 rounded text-content-low border border-app-border">TICKER</span>}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
+                        <OverlayPanel
+                            tier={tier}
+                            banners={banners}
+                            onAdd={addBanner}
+                            onUpdate={updateBanner}
+                            onRemove={deleteBanner}
+                            onToggleVisibility={toggleBanner}
+                        />
                     )}
-                    {/* ... (Mixer, Recording, Private Chat Tabs - Unchanged) */}
+                    
+                    {/* Green Room / Backstage */}
                     {activeRightTab === 'backstage' && (
                         <div className="flex-1 flex flex-col overflow-hidden">
-                            <GreenRoom 
-                                participants={backstageParticipants} 
-                                localParticipantId={myParticipantId || 'local'} 
+                            <GreenRoom
+                                participants={backstageParticipants}
+                                waitingParticipants={waitingRoomParticipants}
+                                localParticipantId={myParticipantId || 'local'}
                                 localStream={processedLocalStream || localStream}
                                 onToggleAudio={handleToggleAudio}
                                 onToggleVideo={handleToggleVideo}
                                 onAddToStage={(id) => handleStageToggle(id, true)}
+                                onAdmitParticipant={admitParticipant}
                                 onContextMenu={handleContextMenu}
                                 isLocalOnStage={isLocalOnStage}
+                            />
+                        </div>
+                    )}
+                    
+                    {/* Private Chat Panel */}
+                    {activeRightTab === 'private_chat' && (
+                        <div className="flex-1 flex flex-col overflow-hidden relative">
+                            {canUsePrivateChat ? (
+                                <PrivateChatPanel
+                                    localParticipantId={myParticipantId || 'local'}
+                                    localParticipantName={config.displayName}
+                                    participants={participants.filter(p => !p.is_in_waiting_room)}
+                                    onSendMessage={(recipientId, message, isPrivate) => {
+                                        // TODO: Integrate with WebSocket signaling to send messages
+                                        console.log('[PrivateChat] Send:', { recipientId, message, isPrivate });
+                                    }}
+                                />
+                            ) : (
+                                <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+                                    <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mb-4">
+                                        <Users className="w-8 h-8 text-amber-500" />
+                                    </div>
+                                    <h3 className="text-sm font-bold text-content-high mb-2">Private Chat</h3>
+                                    <p className="text-xs text-content-medium mb-4">
+                                        {getUpgradeMessage('PRIVATE_CHAT')}
+                                    </p>
+                                    <span className="text-[9px] font-bold text-amber-500 uppercase">Requires Creator Tier</span>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    
+                    {/* Stream Health Panel */}
+                    {activeRightTab === 'stream_health' && (
+                        <div className="flex-1 flex flex-col overflow-hidden">
+                            <StreamHealthMonitor
+                                destinations={destinations}
+                                tier={tier}
+                                onRetry={(id) => {
+                                    console.log('[StreamHealth] Retry destination:', id);
+                                    // Would reconnect to the destination
+                                }}
+                                onToggle={(id, enabled) => {
+                                    toggleDestination(id);
+                                }}
+                                onHotSwitch={(fromId, toId) => {
+                                    console.log('[StreamHealth] Hot switch:', fromId, '->', toId);
+                                    // Would handle seamless failover
+                                }}
+                            />
+                        </div>
+                    )}
+                    
+                    {/* Guest Permissions Panel */}
+                    {activeRightTab === 'guests' && (
+                        <div className="flex-1 flex flex-col overflow-hidden p-4">
+                            <GuestPermissionsPanel
+                                isHost={isHost}
+                                participants={participants}
+                                guestPermissions={guestPermissions}
+                                onUpdatePermissions={handleUpdateGuestPermissions}
+                                onMuteAllGuests={handleMuteAllGuests}
+                                onDisableAllGuestVideo={handleDisableAllGuestVideo}
                             />
                         </div>
                     )}
@@ -1035,11 +1363,13 @@ export function Studio({ config, onLeave }: StudioProps) {
             {isHost && (
                 <div className="w-16 bg-app-surface border-l border-app-border flex flex-col items-center py-4 z-20 gap-4 shrink-0">
                     <RailTab icon={<Palette />} label="Brand" active={activeRightTab === 'brand'} onClick={() => setActiveRightTab('brand')} />
-                    <RailTab icon={<Layers />} label="Banners" active={activeRightTab === 'banners'} onClick={() => setActiveRightTab('banners')} />
+                    <RailTab icon={<Layers />} label="Overlays" active={activeRightTab === 'banners'} onClick={() => setActiveRightTab('banners')} />
                     <RailTab icon={<UserCheck />} label="Green Room" active={activeRightTab === 'backstage'} onClick={() => setActiveRightTab('backstage')} />
                     <RailTab icon={<FileVideo />} label="Recording" active={activeRightTab === 'recording'} onClick={() => setActiveRightTab('recording')} />
                     <RailTab icon={<Sliders />} label="Mixer" active={activeRightTab === 'mixer'} onClick={() => setActiveRightTab('mixer')} />
                     <RailTab icon={<Users />} label="Private" active={activeRightTab === 'private_chat'} onClick={() => setActiveRightTab('private_chat')} />
+                    <RailTab icon={<Activity />} label="Health" active={activeRightTab === 'stream_health'} onClick={() => setActiveRightTab('stream_health')} />
+                    <RailTab icon={<Shield />} label="Guests" active={activeRightTab === 'guests'} onClick={() => setActiveRightTab('guests')} />
                 </div>
             )}
 
@@ -1056,6 +1386,40 @@ export function Studio({ config, onLeave }: StudioProps) {
                         roomId={config.roomId}
                         userId={config.userId}
                     />
+                </div>
+            )}
+            
+            {/* No Destinations Prompt Modal */}
+            {showNoDestinationsPrompt && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setShowNoDestinationsPrompt(false)} />
+                    <div className="relative w-full max-w-md bg-app-surface border border-app-border rounded-2xl shadow-2xl p-6 animate-scale-in">
+                        <div className="text-center">
+                            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+                                <AlertTriangle className="w-8 h-8 text-amber-500" />
+                            </div>
+                            <h3 className="text-xl font-bold text-content-high mb-2">No Destinations Added</h3>
+                            <p className="text-content-medium text-sm mb-6">
+                                You need to add at least one streaming destination before going live. 
+                                Add platforms like YouTube, Twitch, or Facebook to start broadcasting.
+                            </p>
+                            <div className="flex gap-3">
+                                <Button 
+                                    variant="secondary" 
+                                    className="flex-1"
+                                    onClick={() => setShowNoDestinationsPrompt(false)}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button 
+                                    className="flex-1 bg-indigo-600 hover:bg-indigo-700"
+                                    onClick={handleAddDestinationsFromPrompt}
+                                >
+                                    Add Destination
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

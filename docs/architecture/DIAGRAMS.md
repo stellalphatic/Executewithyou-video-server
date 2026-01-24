@@ -239,8 +239,8 @@ title Data Flow Between Services
 
 rectangle "Client Apps" as clients {
   [Web App]
-  [Mobile App]
-  [OBS/Encoder]
+  [Web Browser - Desktop]
+  [Web Browser - Mobile]
 }
 
 rectangle "Gateway" as gw {
@@ -268,7 +268,7 @@ cloud "External" as ext {
 
 [Web App] --> [REST API] : HTTP
 [Web App] --> [WebSocket] : WS
-[OBS/Encoder] --> stream : RTMP/SRT
+[Web Browser - Desktop] --> sfu : WebRTC
 
 [REST API] --> core : room CRUD
 [REST API] --> storage : recordings

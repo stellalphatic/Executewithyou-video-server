@@ -436,18 +436,18 @@ const handleOAuthCallback = async (connectionId: string) => {
 
 ## Environment Variables
 
-Create `frontend/.env`:
+Create `frontend-next/.env.local`:
 
 ```bash
 # API endpoint
-VITE_API_URL=http://localhost:8080/api
+NEXT_PUBLIC_API_URL=http://localhost:8080/api
 
 # WebSocket endpoint
-VITE_WS_URL=ws://localhost:8080
+NEXT_PUBLIC_WS_URL=ws://localhost:8080
 
 # Supabase (for auth)
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 ```
 
 ## Type Alignment

@@ -58,18 +58,8 @@ cd allstrm-backend
 # Copy environment file
 cp .env.example .env
 
-# Start dependencies
-make docker-up
-
-# Run migrations
-make db-migrate
-
-# Build and run
-cargo run --package allstrm-gateway
-cargo run --package allstrm-core
-cargo run --package allstrm-sfu
-cargo run --package allstrm-stream
-cargo run --package allstrm-storage
+# Start all services (Frontend + Backend + DB)
+make dev
 ```
 
 ## Service Ports
@@ -84,7 +74,7 @@ cargo run --package allstrm-storage
 
 ## Architecture Overview
 
-ALLSTRM uses a microservices architecture:
+ALLSTRM uses a distributed architecture (Single Database Pattern):
 
 ```
                     ┌─────────────┐

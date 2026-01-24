@@ -1,8 +1,94 @@
 'use client';
 
+// Declare global types for MediaPipe
+declare global {
+    interface Window {
+        SelfieSegmentation: any;
+        Module?: any;
+    }
+}
 
 const VS_SOURCE = `attribute vec2 a_position;attribute vec2 a_texCoord;varying vec2 v_texCoord;void main(){gl_Position=vec4(a_position,0,1);v_texCoord=vec2(a_texCoord.x,1.0-a_texCoord.y);}`;
 const FS_SOURCE = `precision mediump float;varying vec2 v_texCoord;uniform sampler2D u_frame;uniform sampler2D u_mask;uniform sampler2D u_bg;uniform int u_effect;uniform int u_useGreenScreen;uniform vec2 u_resolution;uniform float u_blurStrength;uniform float u_keyThreshold;uniform float u_keySmoothness;uniform vec3 u_keyColor;uniform float u_brightness;uniform float u_contrast;uniform float u_saturation;vec3 adjustColor(vec3 color,float b,float c,float s){color+=b;color=(color-0.5)*c+0.5;vec3 gray=vec3(dot(color,vec3(0.299,0.587,0.114)));return mix(gray,color,s);}vec4 blur(sampler2D image,vec2 uv,vec2 res,float strength){vec4 color=vec4(0.0);float total=0.0;float stride=max(1.0,strength);for(float x=-2.0;x<=2.0;x++){for(float y=-2.0;y<=2.0;y++){vec2 offset=vec2(x,y)*stride/res;color+=texture2D(image,uv+offset);total+=1.0;}}return color/total;}void main(){vec4 texColor=texture2D(u_frame,v_texCoord);vec3 color=texColor.rgb;color=adjustColor(color,u_brightness,u_contrast,u_saturation);float alpha=1.0;if(u_effect>0){if(u_useGreenScreen==1){float diff=length(color-u_keyColor);alpha=smoothstep(u_keyThreshold,u_keyThreshold+u_keySmoothness,diff);if(diff<u_keyThreshold+u_keySmoothness*2.0){color=mix(vec3(dot(color,vec3(0.299,0.587,0.114))),color,0.5);}}else{float maskVal=texture2D(u_mask,v_texCoord).r;alpha=smoothstep(0.1,0.6,maskVal);}}if(u_effect==0){gl_FragColor=vec4(color,1.0);}else if(u_effect==1){vec4 blurred=blur(u_frame,v_texCoord,u_resolution,u_blurStrength);vec3 bg=adjustColor(blurred.rgb,u_brightness,u_contrast,u_saturation);gl_FragColor=vec4(mix(bg,color,alpha),1.0);}else if(u_effect==2){vec4 bgTex=texture2D(u_bg,v_texCoord);gl_FragColor=vec4(mix(bgTex.rgb,color,alpha),1.0);}}`;
+
+// Track MediaPipe loading state
+let mediaPipeLoadAttempted = false;
+let mediaPipeLoadFailed = false;
+
+// Load MediaPipe script dynamically with better error handling
+const loadMediaPipeScript = (): Promise<void> => {
+    return new Promise((resolve, reject) => {
+        // If already loaded, resolve immediately
+        if (window.SelfieSegmentation) {
+            resolve();
+            return;
+        }
+        
+        // If we already tried and failed, don't try again
+        if (mediaPipeLoadFailed) {
+            reject(new Error('MediaPipe previously failed to load'));
+            return;
+        }
+        
+        if (mediaPipeLoadAttempted) {
+            // Wait a bit for the previous attempt to complete
+            setTimeout(() => {
+                if (window.SelfieSegmentation) {
+                    resolve();
+                } else {
+                    reject(new Error('MediaPipe not available'));
+                }
+            }, 1000);
+            return;
+        }
+        
+        mediaPipeLoadAttempted = true;
+        
+        // Suppress Emscripten Module.arguments warning
+        const originalModule = window.Module;
+        try {
+            // Pre-configure Module to avoid the arguments warning
+            if (typeof window.Module === 'undefined') {
+                (window as any).Module = {};
+            }
+        } catch (e) {
+            // Ignore
+        }
+        
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.1675465747/selfie_segmentation.js';
+        script.crossOrigin = 'anonymous';
+        script.async = true;
+        
+        const timeout = setTimeout(() => {
+            mediaPipeLoadFailed = true;
+            reject(new Error('MediaPipe load timeout'));
+        }, 10000);
+        
+        script.onload = () => {
+            clearTimeout(timeout);
+            // Give it a moment to initialize
+            setTimeout(() => {
+                if (window.SelfieSegmentation) {
+                    console.log('[VideoProcessor] MediaPipe loaded successfully');
+                    resolve();
+                } else {
+                    mediaPipeLoadFailed = true;
+                    reject(new Error('SelfieSegmentation not found after script load'));
+                }
+            }, 100);
+        };
+        
+        script.onerror = (e) => {
+            clearTimeout(timeout);
+            mediaPipeLoadFailed = true;
+            console.warn('[VideoProcessor] Failed to load MediaPipe script:', e);
+            reject(new Error('Failed to load MediaPipe'));
+        };
+        
+        document.head.appendChild(script);
+    });
+};
 
 export class VideoProcessor {
     private segmenter: any;
@@ -35,6 +121,10 @@ export class VideoProcessor {
     private segmentationSkipRatio: number = 2;
     private worker: Worker | null = null;
     private isDestroyed: boolean = false;
+    
+    // Cache the latest mask for use between segmentation updates
+    private cachedMask: ImageBitmap | HTMLCanvasElement | null = null;
+    private hasMaskUploaded: boolean = false;
 
     constructor() {
         this.canvas = document.createElement('canvas');
@@ -68,12 +158,28 @@ export class VideoProcessor {
          });
          document.body.appendChild(this.shadowContainer);
 
-         if (!window.SelfieSegmentation) return;
+         // Load MediaPipe script first
+         try {
+             await loadMediaPipeScript();
+             console.log('[VideoProcessor] MediaPipe script loaded');
+         } catch (e) {
+             console.warn('[VideoProcessor] Failed to load MediaPipe script:', e);
+             return;
+         }
+
+         if (!window.SelfieSegmentation) {
+             console.warn('[VideoProcessor] SelfieSegmentation not available');
+             return;
+         }
+         
          try { 
-             this.segmenter = new window.SelfieSegmentation({ locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}` }); 
+             this.segmenter = new window.SelfieSegmentation({ 
+                 locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}` 
+             }); 
              this.segmenter.setOptions({ modelSelection: 1, selfieMode: false }); 
              await this.segmenter.initialize(); 
-             this.isSegmenterReady = true; 
+             this.isSegmenterReady = true;
+             console.log('[VideoProcessor] AI Segmentation Model Ready');
          } catch (e) { 
              console.error("[VideoProcessor] AI Model Failed:", e); 
          }
@@ -123,6 +229,8 @@ export class VideoProcessor {
 
         this.stopProcessing(); 
         this.activeStreamId = is.id;
+        this.cachedMask = null;
+        this.hasMaskUploaded = false;
 
         const vt = is.getVideoTracks()[0]; 
         if (!vt) return is; 
@@ -136,7 +244,6 @@ export class VideoProcessor {
         
         if (!this.sourceVideo) {
             this.sourceVideo = document.createElement('video'); 
-            // FIX: Explicit dimensions & DOM attachment
             this.sourceVideo.width = 1280;
             this.sourceVideo.height = 720;
             this.sourceVideo.autoplay = true; 
@@ -156,14 +263,26 @@ export class VideoProcessor {
         
         if (this.worker) this.worker.postMessage('start');
         
+        // Setup segmentation callback - cache the mask for reuse
         if(this.segmenter && this.isSegmenterReady) {
             this.segmenter.onResults((r:any) => {
-                if(this.gl && this.sourceVideo && !this.isDestroyed) {
-                    this.drawWebGL(this.sourceVideo, r.segmentationMask);
+                if(this.gl && this.sourceVideo && !this.isDestroyed && r.segmentationMask) {
+                    // Cache the mask and upload it
+                    this.cachedMask = r.segmentationMask;
+                    this.uploadMaskTexture(r.segmentationMask);
+                    this.hasMaskUploaded = true;
                 }
             });
         } 
         return os; 
+    }
+    
+    private uploadMaskTexture(mask: any) {
+        if (!this.gl || !this.maskTexture) return;
+        const gl = this.gl;
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, this.maskTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, mask);
     }
 
     private async processFrame() {
@@ -172,16 +291,20 @@ export class VideoProcessor {
         if(this.sourceVideo.readyState >= 2) {
             if (this.sourceVideo.videoWidth > 0 && this.sourceVideo.videoHeight > 0) {
                 if(this.gl) {
-                    const nAI = this.activeEffect !== 'none' && !this.useGreenScreen && this.isSegmenterReady;
-                    if(nAI) {
+                    const needsAI = this.activeEffect !== 'none' && !this.useGreenScreen && this.isSegmenterReady;
+                    if(needsAI) {
                         this.frameCount++;
+                        // Send to segmenter every N frames
                         if(this.frameCount % this.segmentationSkipRatio === 0) {
-                            try { await this.segmenter.send({image:this.sourceVideo}); } catch(e) {}
+                            try { 
+                                await this.segmenter.send({image: this.sourceVideo}); 
+                            } catch(e) {
+                                console.warn('[VideoProcessor] Segmentation send error:', e);
+                            }
                         }
-                        this.drawWebGL(this.sourceVideo, null); 
-                    } else {
-                        this.drawWebGL(this.sourceVideo, null);
                     }
+                    // Always draw with current state (cached mask will be used if available)
+                    this.drawWebGL(this.sourceVideo);
                 } else if(this.ctx2d) {
                     this.ctx2d.drawImage(this.sourceVideo, 0, 0, this.canvas.width, this.canvas.height);
                 }
@@ -189,10 +312,54 @@ export class VideoProcessor {
         } 
     }
 
-    private drawWebGL(s:any,m:any){ if(!this.gl||!this.program)return; const gl=this.gl; gl.useProgram(this.program); gl.uniform1i(gl.getUniformLocation(this.program,'u_frame'),0); gl.uniform1i(gl.getUniformLocation(this.program,'u_mask'),1); gl.uniform1i(gl.getUniformLocation(this.program,'u_bg'),2); gl.uniform1i(gl.getUniformLocation(this.program,'u_effect'),this.activeEffect==='blur'?1:this.activeEffect==='image'?2:0); gl.uniform1f(gl.getUniformLocation(this.program,'u_saturation'), this.saturation); gl.uniform1f(gl.getUniformLocation(this.program,'u_contrast'), this.contrast); gl.uniform1f(gl.getUniformLocation(this.program,'u_brightness'), this.brightness); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,this.frameTexture); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,s); if(m){gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,this.maskTexture);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,m);} gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,this.bgTexture); gl.enableVertexAttribArray(gl.getAttribLocation(this.program,"a_position"));gl.bindBuffer(gl.ARRAY_BUFFER,this.positionBuffer);gl.vertexAttribPointer(gl.getAttribLocation(this.program,"a_position"),2,gl.FLOAT,false,0,0); gl.enableVertexAttribArray(gl.getAttribLocation(this.program,"a_texCoord"));gl.bindBuffer(gl.ARRAY_BUFFER,this.texCoordBuffer);gl.vertexAttribPointer(gl.getAttribLocation(this.program,"a_texCoord"),2,gl.FLOAT,false,0,0); gl.drawArrays(gl.TRIANGLE_STRIP,0,4); }
+    private drawWebGL(s:any){ 
+        if(!this.gl||!this.program)return; 
+        const gl=this.gl; 
+        gl.useProgram(this.program); 
+        
+        // Set all uniforms
+        gl.uniform1i(gl.getUniformLocation(this.program,'u_frame'),0); 
+        gl.uniform1i(gl.getUniformLocation(this.program,'u_mask'),1); 
+        gl.uniform1i(gl.getUniformLocation(this.program,'u_bg'),2); 
+        gl.uniform1i(gl.getUniformLocation(this.program,'u_effect'),this.activeEffect==='blur'?1:this.activeEffect==='image'?2:0); 
+        gl.uniform1i(gl.getUniformLocation(this.program,'u_useGreenScreen'),this.useGreenScreen?1:0);
+        gl.uniform2f(gl.getUniformLocation(this.program,'u_resolution'),this.canvas.width,this.canvas.height);
+        gl.uniform1f(gl.getUniformLocation(this.program,'u_blurStrength'),this.blurStrength);
+        gl.uniform1f(gl.getUniformLocation(this.program,'u_keyThreshold'),this.keyThreshold);
+        gl.uniform1f(gl.getUniformLocation(this.program,'u_keySmoothness'),this.keySmoothness);
+        gl.uniform3f(gl.getUniformLocation(this.program,'u_keyColor'),this.keyColor[0],this.keyColor[1],this.keyColor[2]);
+        gl.uniform1f(gl.getUniformLocation(this.program,'u_saturation'), this.saturation); 
+        gl.uniform1f(gl.getUniformLocation(this.program,'u_contrast'), this.contrast); 
+        gl.uniform1f(gl.getUniformLocation(this.program,'u_brightness'), this.brightness); 
+        
+        // Upload frame texture
+        gl.activeTexture(gl.TEXTURE0); 
+        gl.bindTexture(gl.TEXTURE_2D,this.frameTexture); 
+        gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,s); 
+        
+        // Mask texture is already uploaded in uploadMaskTexture, just bind it
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, this.maskTexture);
+        
+        // Bind background texture
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D,this.bgTexture); 
+        
+        // Setup vertex attributes
+        gl.enableVertexAttribArray(gl.getAttribLocation(this.program,"a_position"));
+        gl.bindBuffer(gl.ARRAY_BUFFER,this.positionBuffer);
+        gl.vertexAttribPointer(gl.getAttribLocation(this.program,"a_position"),2,gl.FLOAT,false,0,0); 
+        gl.enableVertexAttribArray(gl.getAttribLocation(this.program,"a_texCoord"));
+        gl.bindBuffer(gl.ARRAY_BUFFER,this.texCoordBuffer);
+        gl.vertexAttribPointer(gl.getAttribLocation(this.program,"a_texCoord"),2,gl.FLOAT,false,0,0); 
+        
+        gl.drawArrays(gl.TRIANGLE_STRIP,0,4); 
+    }
     
     stopProcessing() { 
         this.activeStreamId = null;
+        this.cachedMask = null;
+        this.hasMaskUploaded = false;
         if(this.worker) this.worker.postMessage('stop');
         if(this.sourceVideo){
             this.sourceVideo.pause();

@@ -7,7 +7,8 @@ export const ICE_SERVERS = [
   { urls: 'stun:stun1.l.google.com:19302' },
 ];
 
-export const WEBSOCKET_URL = process.env.NEXT_PUBLIC_ALLSTRM_WS_URL || 'ws://localhost:8080/ws';
+// WebSocket URL - should NOT include /ws path as SignalClient adds it
+export const WEBSOCKET_URL = process.env.NEXT_PUBLIC_ALLSTRM_WS_URL || 'ws://localhost:8080';
 
 // Local Supabase configuration (self-hosted)
 // Anon key for local dev (matches kong.yml)

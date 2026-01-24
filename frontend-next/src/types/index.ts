@@ -50,7 +50,7 @@ export type ClientMessageType =
 export type ServerMessageType =
   | 'JOIN_ACCEPTED' | 'JOIN_REJECTED' | 'PARTICIPANT_JOINED' | 'PARTICIPANT_LEFT' | 'PARTICIPANT_UPDATED'
   | 'OFFER_RECEIVED' | 'ANSWER_RECEIVED' | 'ICE_CANDIDATE_RECEIVED' | 'ROOM_STATE_UPDATE' | 'LAYOUT_STATE_UPDATE'
-  | 'CHAT_MESSAGE_RECEIVED' | 'ERROR' | 'RECORDING_STARTED' | 'RECORDING_STOPPED';
+  | 'CHAT_MESSAGE_RECEIVED' | 'ERROR' | 'RECORDING_STARTED' | 'RECORDING_STOPPED' | 'MEDIA_STATE_UPDATE';
 
 // ----------------------
 
@@ -194,32 +194,92 @@ export interface VisualConfigType {
   keySmoothness: number;
 }
 
+// Recording Configuration Type
+export type RecordingDestination = 'local' | 'cloud' | 'both';
+
+export interface RecordingConfig {
+  enableMixedRecording: boolean;  // Records final composed output
+  enableIsoRecording: boolean;    // Records individual participant tracks
+  autoStartMode: 'none' | 'on_live' | 'from_start'; // When to auto-start recording
+  showHostName: boolean;          // Display host name overlay
+  destination: RecordingDestination; // Where recordings are saved
+  cloudAutoUpload: boolean;       // Auto-upload local recordings to cloud when connection available
+}
+
 // Brand Configuration
 export type BrandTheme = 'bubble' | 'classic' | 'minimal' | 'block';
 export type OverlayScope = 'global' | 'host_only'; // Global = Whole Screen, Host Only = Host Region
+export type LogoPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+export type LogoSize = 'small' | 'medium' | 'large';
+
+// Tier-based feature access for branding
+export const BRANDING_TIER_REQUIREMENTS = {
+  removeWatermark: Tier.CREATOR,       // FREE tier always shows ALLSTRM watermark
+  customLogo: Tier.CREATOR,            // Upload custom logo
+  logoBackground: Tier.PRO,            // Add background behind logo
+  advancedOverlays: Tier.PRO,          // Ticker, lower thirds
+  customFonts: Tier.BROADCAST,         // Custom fonts for overlays
+  animatedOverlays: Tier.ENTERPRISE,   // Animated transitions
+} as const;
 
 export interface BrandConfig {
   color: string;
   theme: BrandTheme;
   logoUrl?: string;
+  logoFile?: File;                     // For upload handling
+  logoPosition: LogoPosition;
+  logoSize: LogoSize;
+  logoBackground?: string;             // Background color behind logo
+  logoBackgroundEnabled: boolean;
+  logoPadding: number;                 // Padding around logo (px)
+  logoOpacity: number;                 // 0-100
   showDisplayNames: boolean;
   showHeadlines: boolean;
   position?: { x: number, y: number }; // Percentage 0-100
   scope: OverlayScope;
   logoLocked?: boolean;
+  // Watermark settings (enforced for FREE tier)
+  showWatermark: boolean;              // Always true for FREE tier
+  watermarkPosition: LogoPosition;
+  watermarkOpacity: number;            // 0-100
 }
+
+export type OverlayType = 'banner' | 'ticker' | 'lower_third' | 'custom';
+export type TickerSpeed = 'slow' | 'medium' | 'fast';
+export type OverlayAnimation = 'none' | 'fade' | 'slide_left' | 'slide_right' | 'slide_up' | 'slide_down';
 
 export interface Banner {
   id: string;
   text: string;
-  isTicker: boolean;
+  type: OverlayType;                   // banner | ticker | lower_third | custom
+  isTicker: boolean;                   // Legacy - kept for compat
   isVisible: boolean;
   position?: { x: number, y: number }; // Percentage 0-100
-  customColor?: string; // Background color override
-  customTextColor?: string; // Text color override
+  // Color settings
+  backgroundColor: string;             // Background color
+  backgroundOpacity: number;           // 0-100 (100 = solid, 0 = transparent)
+  textColor: string;                   // Text color
+  // Legacy color fields (kept for compat)
+  customColor?: string;
+  customTextColor?: string;
+  // Size and layout
+  fullWidth: boolean;                  // Full width ticker
+  height?: number;                     // Height in pixels (for tickers)
+  verticalOnly: boolean;               // Restrict drag to vertical axis only (for tickers)
+  minY?: number;                       // Minimum Y position (percentage)
+  maxY?: number;                       // Maximum Y position (percentage)
+  // Style settings
   scope: OverlayScope;
   locked?: boolean;
   style?: 'standard' | 'lower_third';
+  fontSize?: number;                   // Font size in px
+  fontWeight?: 'normal' | 'medium' | 'bold';
+  // Ticker-specific
+  tickerSpeed?: TickerSpeed;
+  tickerDirection?: 'left' | 'right';
+  // Animation
+  animation?: OverlayAnimation;
+  animationDuration?: number;          // ms
 }
 
 export interface ChatMessage {

@@ -43,6 +43,7 @@ export type ClientMessageType =
 
 type SignalEventHandler = (payload: any) => void;
 
+// Base URL should NOT include /ws - we add it in the connect method
 const WS_BASE = (import.meta as any).env?.VITE_WS_URL || 'ws://localhost:8080';
 
 export class SignalClient {
@@ -60,7 +61,14 @@ export class SignalClient {
     public isMock = false;
 
     constructor(url: string = WS_BASE) {
-        this.url = url;
+        // Normalize URL - remove trailing /ws or /ws/ if present to avoid double /ws/ws
+        // Also handle multiple /ws patterns just in case
+        let normalizedUrl = url;
+        while (normalizedUrl.endsWith('/ws') || normalizedUrl.endsWith('/ws/')) {
+            normalizedUrl = normalizedUrl.replace(/\/ws\/?$/, '');
+        }
+        this.url = normalizedUrl;
+        console.log('[SignalClient] Initialized with base URL:', this.url);
     }
 
     /**
@@ -269,10 +277,10 @@ export class SignalClient {
 
         this.send('JOIN_REQUEST', {
             room_id: roomId,
-            displayName,
+            display_name: displayName,
             role,
             mode: "meeting",
-            mediaCapabilities
+            media_capabilities: mediaCapabilities
         });
     }
 

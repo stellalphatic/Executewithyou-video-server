@@ -303,21 +303,21 @@ export const Destinations: React.FC<DestinationsProps> = ({
         handlePlatformClick(platform);
     };
 
-    // 13 Platform definitions - IDs match Rust Backend exactly
+    // Platform definitions - Only include platforms that support live RTMP streaming
+    // Note: Instagram and TikTok don't support third-party RTMP streaming
     const platforms = [
-        { id: 'youtube', name: 'YouTube', icon: <Youtube className="w-8 h-8 text-[#FF0000]" />, supportsOAuth: true },
-        { id: 'facebook', name: 'Facebook Live', icon: <Facebook className="w-8 h-8 text-[#1877F2]" />, supportsOAuth: true },
-        { id: 'linkedin', name: 'LinkedIn Live', icon: <Linkedin className="w-8 h-8 text-[#0A66C2]" />, supportsOAuth: true },
-        { id: 'x', name: 'X (Twitter)', icon: <Twitter className="w-8 h-8 text-content-high" />, supportsOAuth: true },
-        { id: 'twitch', name: 'Twitch', icon: <Twitch className="w-8 h-8 text-[#9146FF]" />, supportsOAuth: true },
-        { id: 'instagram', name: 'Instagram Live', icon: <Instagram className="w-8 h-8 text-[#E4405F]" />, supportsOAuth: true },
-        { id: 'tiktok', name: 'TikTok Live', icon: <div className="w-8 h-8 bg-black text-white font-bold flex items-center justify-center rounded-full text-xs border border-white/20 shadow-sm" style={{textShadow: "1px 1px 0 #FF0050, -1px -1px 0 #00F2EA"}}>T</div>, supportsOAuth: true },
-        { id: 'kick', name: 'Kick', icon: <div className="w-8 h-8 bg-[#53FC18] text-black font-black flex items-center justify-center rounded text-sm shadow-sm">K</div>, supportsOAuth: false },
-        { id: 'vimeo', name: 'Vimeo', icon: <div className="w-8 h-8 bg-[#1AB7EA] text-white font-bold flex items-center justify-center rounded-full text-sm shadow-sm">v</div>, supportsOAuth: true },
-        { id: 'amazon', name: 'Amazon Live', icon: <div className="w-8 h-8 bg-[#FF9900] text-black font-bold flex items-center justify-center rounded text-xs shadow-sm">a</div>, supportsOAuth: true },
-        { id: 'brightcove', name: 'Brightcove', icon: <div className="w-8 h-8 bg-[#BC2C3D] text-white font-bold flex items-center justify-center rounded text-sm shadow-sm">B</div>, supportsOAuth: true },
-        { id: 'hopin', name: 'Hopin', icon: <div className="w-8 h-8 bg-black text-white font-bold flex items-center justify-center rounded-full text-xs border border-white/20 shadow-sm">H</div>, supportsOAuth: true },
-        { id: 'custom_rtmp', name: 'Custom RTMP', icon: <div className="w-8 h-8 bg-gray-600 text-white font-bold flex items-center justify-center rounded text-[10px] shadow-sm">RTMP</div>, supportsOAuth: false },
+        { id: 'youtube', name: 'YouTube', icon: <Youtube className="w-8 h-8 text-[#FF0000]" />, supportsOAuth: true, supportsChat: true },
+        { id: 'twitch', name: 'Twitch', icon: <Twitch className="w-8 h-8 text-[#9146FF]" />, supportsOAuth: true, supportsChat: true },
+        { id: 'facebook', name: 'Facebook Live', icon: <Facebook className="w-8 h-8 text-[#1877F2]" />, supportsOAuth: true, supportsChat: true },
+        { id: 'linkedin', name: 'LinkedIn Live', icon: <Linkedin className="w-8 h-8 text-[#0A66C2]" />, supportsOAuth: true, supportsChat: false },
+        { id: 'x', name: 'X (Twitter)', icon: <Twitter className="w-8 h-8 text-content-high" />, supportsOAuth: true, supportsChat: false },
+        { id: 'kick', name: 'Kick', icon: <div className="w-8 h-8 bg-[#53FC18] text-black font-black flex items-center justify-center rounded text-sm shadow-sm">K</div>, supportsOAuth: false, supportsChat: true },
+        { id: 'vimeo', name: 'Vimeo', icon: <div className="w-8 h-8 bg-[#1AB7EA] text-white font-bold flex items-center justify-center rounded-full text-sm shadow-sm">v</div>, supportsOAuth: true, supportsChat: false },
+        { id: 'amazon', name: 'Amazon Live', icon: <div className="w-8 h-8 bg-[#FF9900] text-black font-bold flex items-center justify-center rounded text-xs shadow-sm">a</div>, supportsOAuth: true, supportsChat: false },
+        { id: 'brightcove', name: 'Brightcove', icon: <div className="w-8 h-8 bg-[#BC2C3D] text-white font-bold flex items-center justify-center rounded text-sm shadow-sm">B</div>, supportsOAuth: true, supportsChat: false },
+        { id: 'hopin', name: 'Hopin', icon: <div className="w-8 h-8 bg-black text-white font-bold flex items-center justify-center rounded-full text-xs border border-white/20 shadow-sm">H</div>, supportsOAuth: true, supportsChat: false },
+        { id: 'custom_rtmp', name: 'Custom RTMP', icon: <div className="w-8 h-8 bg-gray-600 text-white font-bold flex items-center justify-center rounded text-[10px] shadow-sm">RTMP</div>, supportsOAuth: false, supportsChat: false },
+        { id: 'custom_srt', name: 'Custom SRT', icon: <div className="w-8 h-8 bg-gray-700 text-white font-bold flex items-center justify-center rounded text-[10px] shadow-sm">SRT</div>, supportsOAuth: false, supportsChat: false },
     ];
 
     const getPlatformInfo = (id: string) => {

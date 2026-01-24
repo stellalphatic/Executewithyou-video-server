@@ -1,0 +1,18 @@
+# ALLSTRM Gateway Service - Development Dockerfile with Hot Reload
+FROM rust:1.92-slim-bookworm
+
+WORKDIR /app
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install cargo-watch for hot reload
+RUN cargo install cargo-watch --locked
+
+EXPOSE 8080
+
+# Use cargo-watch to automatically rebuild and restart on file changes
+CMD ["cargo", "watch", "-x", "run -p allstrm-gateway", "-w", "services/gateway", "-w", "services/common", "-w", "services/protocol"]

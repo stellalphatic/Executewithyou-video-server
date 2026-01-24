@@ -49,7 +49,8 @@ export class SFUWebRTCManager {
                 participantId: payload.participantId,
                 roomId: payload.roomId,
                 participants: payload.participants,
-                availableTracks: payload.availableTracks
+                availableTracks: payload.availableTracks,
+                isInWaitingRoom: payload.isInWaitingRoom
             });
         });
 
@@ -92,8 +93,11 @@ export class SFUWebRTCManager {
         role: string = 'guest',
         mode: string = 'meeting'
     ): Promise<void> {
-        // Generate a unique participant ID
-        this.participantId = `participant-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+        // Generate a unique participant ID only once per manager instance
+        if (!this.participantId) {
+            this.participantId = `participant-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+        }
+        console.log('[SFUWebRTCManager] Using participant ID:', this.participantId);
 
         // Join via SFU REST API
         const response = await this.sfuClient.join(

@@ -27,11 +27,11 @@ Quick checklist for completing the frontend-backend integration.
 
 ### Environment Setup
 ```bash
-# Create frontend/.env
-VITE_API_URL=http://localhost:8080/api
-VITE_WS_URL=ws://localhost:8080
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
+# Create frontend-next/.env.local
+NEXT_PUBLIC_API_URL=http://localhost:8080/api
+NEXT_PUBLIC_WS_URL=ws://localhost:8080
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 ```
 
 ## Priority 1: OAuth UI Integration
@@ -188,18 +188,12 @@ const publishTracks = async (pc: RTCPeerConnection, participantId: string) => {
 ## Quick Commands
 
 ```bash
-# Start backend services
+# Start all services (Backend + Frontend + DB)
 cd allstrm-backend
-make docker-up          # Start Postgres/Redis
-cargo run -p allstrm-gateway &
-cargo run -p allstrm-core &
-cargo run -p allstrm-sfu &
-cargo run -p allstrm-stream &
+make dev
 
-# Start frontend
-cd frontend
-npm install
-npm run dev
+# Access Frontend: http://localhost:3000
+# Access Gateway: http://localhost:8080
 ```
 
 ## Key Backend Ports
