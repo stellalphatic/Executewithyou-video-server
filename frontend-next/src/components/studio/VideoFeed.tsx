@@ -59,11 +59,11 @@ export function VideoFeed({
           autoPlay
           muted
           playsInline
-          className={`w-full h-full ${isLocal && !isScreen ? 'transform scale-x-[-1]' : ''}`}
+          className="w-full h-full"
           style={{
             objectFit,
             objectPosition,
-            transform: `scale(${zoom})`,
+            transform: isLocal && !isScreen ? `scale(${zoom}) scaleX(-1)` : `scale(${zoom})`,
             transition: 'transform 0.1s ease-out',
           }}
         />

@@ -2,9 +2,10 @@ import { AuthSession, Room, RoomMode, Destination, Tier } from '@/types';
 
 // Use environment variable or default to localhost
 // Next.js uses NEXT_PUBLIC_ prefix for client-side env vars
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api';
-// Core service URL for OAuth (OAuth routes are on core service directly)
-const CORE_API_BASE = process.env.NEXT_PUBLIC_CORE_API_URL || 'http://localhost:8081/api';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api';
+
+// NOTE: OAuth is Phase 2 feature - currently all destinations use manual RTMP
+// When OAuth is implemented, these endpoints will be Next.js API routes
 
 export interface OAuthProvider {
     name: string;
@@ -54,14 +55,13 @@ export class ApiClient {
         return this.token;
     }
 
-    private static async request<T>(endpoint: string, options: RequestInit = {}, useCore = false): Promise<T> {
+    private static async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
         const headers: HeadersInit = {
             'Content-Type': 'application/json',
             ...(this.token ? { 'Authorization': `Bearer ${this.token}` } : {})
         };
 
-        const baseUrl = useCore ? CORE_API_BASE : API_BASE;
-        const response = await fetch(`${baseUrl}${endpoint}`, {
+        const response = await fetch(`${API_BASE}${endpoint}`, {
             ...options,
             headers: { ...headers, ...options.headers }
         });
@@ -76,134 +76,184 @@ export class ApiClient {
     }
 
     // ==========================================
-    // ROOMS
+    // ROOMS (Database-backed)
     // ==========================================
 
-    static async createRoom(data: { owner_id: string; name: string; mode: RoomMode }): Promise<Room> {
+    static async createRoom(data: { owner_id: string; name: string; mode?: RoomMode; settings?: any }): Promise<Room> {
         return this.request<Room>('/rooms', {
             method: 'POST',
             body: JSON.stringify(data)
         });
     }
 
-    static async listRooms(ownerId: string, limit = 20, offset = 0): Promise<{ rooms: Room[] }> {
-        return this.request(`/rooms?owner_id=${ownerId}&limit=${limit}&offset=${offset}`);
-    }
-
-    static async getRoom(roomId: string): Promise<Room> {
-        return this.request(`/rooms/${roomId}`);
+    static async listRooms(ownerId: string): Promise<{ rooms: Room[] }> {
+        return this.request(`/rooms?owner_id=${ownerId}`);
     }
 
     static async updateRoom(roomId: string, data: Partial<Room>): Promise<Room> {
-        return this.request(`/rooms/${roomId}`, {
-            method: 'PUT',
-            body: JSON.stringify(data)
+        return this.request('/rooms', {
+            method: 'PATCH',
+            body: JSON.stringify({ id: roomId, ...data })
         });
     }
 
     static async deleteRoom(roomId: string): Promise<void> {
-        return this.request(`/rooms/${roomId}`, { method: 'DELETE' });
+        return this.request(`/rooms?id=${roomId}`, { method: 'DELETE' });
     }
-
-    static async joinRoom(roomId: string, joinCode?: string): Promise<AuthSession> {
-        return this.request<AuthSession>(`/rooms/${roomId}/join`, {
-            method: 'POST',
-            body: JSON.stringify({ join_code: joinCode })
-        });
-    }
-
-    // static async joinRoom(roomId: string, displayName: string): Promise<AuthSession> {
-    //     return this.request<AuthSession>(`/rooms/${roomId}/join`, {
-    //         method: 'POST',
-    //         body: JSON.stringify({ display_name: displayName })
-    //     });
-    // }
 
     static async getParticipants(roomId: string): Promise<{ participants: any[] }> {
         return this.request(`/rooms/${roomId}/participants`);
     }
 
     // ==========================================
-    // DESTINATIONS
+    // PROJECTS (Workspace-level partitioning)
     // ==========================================
 
-    static async listDestinations(roomId: string): Promise<{ destinations: Destination[] }> {
-        return this.request(`/rooms/${roomId}/destinations`);
+    static async listProjects(userId: string): Promise<{ projects: any[] }> {
+        return this.request(`/projects?user_id=${userId}`);
     }
 
-    static async createDestination(roomId: string, data: {
-        platform: string;
-        name: string;
-        rtmp_url: string;
-        stream_key: string;
-    }): Promise<Destination> {
-        return this.request(`/rooms/${roomId}/destinations`, {
+    static async createProject(data: { organization_id: string; owner_id: string; name: string; description?: string }): Promise<any> {
+        return this.request('/projects', {
             method: 'POST',
             body: JSON.stringify(data)
         });
     }
 
-    static async getDestination(roomId: string, destinationId: string): Promise<Destination> {
-        return this.request(`/rooms/${roomId}/destinations/${destinationId}`);
+    static async updateProject(projectId: string, data: any): Promise<any> {
+        return this.request('/projects', {
+            method: 'PATCH',
+            body: JSON.stringify({ id: projectId, ...data })
+        });
     }
 
-    static async updateDestination(roomId: string, destinationId: string, data: Partial<Destination>): Promise<Destination> {
-        return this.request(`/rooms/${roomId}/destinations/${destinationId}`, {
-            method: 'PUT',
+    static async deleteProject(projectId: string): Promise<void> {
+        return this.request(`/projects?id=${projectId}`, { method: 'DELETE' });
+    }
+
+    // ==========================================
+    // DESTINATIONS (Database-backed)
+    // ==========================================
+
+    static async listDestinations(userId: string): Promise<{ destinations: Destination[] }> {
+        return this.request(`/destinations?user_id=${userId}`);
+    }
+
+    static async createDestination(data: {
+        user_id: string;
+        platform: string;
+        name: string;
+        rtmp_url: string;
+        stream_key: string;
+        room_id?: string;
+    }): Promise<Destination> {
+        return this.request('/destinations', {
+            method: 'POST',
             body: JSON.stringify(data)
         });
     }
 
-    static async deleteDestination(roomId: string, destinationId: string): Promise<void> {
-        return this.request(`/rooms/${roomId}/destinations/${destinationId}`, { method: 'DELETE' });
+    static async updateDestination(destinationId: string, data: Partial<Destination>): Promise<Destination> {
+        return this.request('/destinations', {
+            method: 'PATCH',
+            body: JSON.stringify({ id: destinationId, ...data })
+        });
     }
 
-    static async toggleDestination(roomId: string, destinationId: string): Promise<Destination> {
-        return this.request(`/rooms/${roomId}/destinations/${destinationId}/toggle`, { method: 'POST' });
+    static async deleteDestination(destinationId: string): Promise<void> {
+        return this.request(`/destinations?id=${destinationId}`, { method: 'DELETE' });
+    }
+
+    static async toggleDestination(destinationId: string, enabled: boolean): Promise<Destination> {
+        return this.request('/destinations', {
+            method: 'PATCH',
+            body: JSON.stringify({ id: destinationId, enabled })
+        });
     }
 
     // ==========================================
-    // OAUTH (uses core service directly)
+    // OAUTH (via Next.js API routes)
     // ==========================================
+    // OAuth is available when provider env vars are configured
+    // Falls back to manual RTMP entry when not configured
 
+    /**
+     * List available OAuth providers
+     * Providers with is_configured=false should fallback to manual RTMP
+     */
     static async listOAuthProviders(): Promise<{ providers: OAuthProvider[] }> {
-        return this.request('/oauth/providers', {}, true);
-    }
-
-    static async listOAuthConnections(userId: string): Promise<{ connections: OAuthConnection[] }> {
-        return this.request(`/oauth/connections?user_id=${userId}`, {}, true);
-    }
-
-    static async disconnectOAuth(connectionId: string): Promise<void> {
-        return this.request(`/oauth/connections/${connectionId}`, { method: 'DELETE' }, true);
-    }
-
-    static async getStreamDestinationFromOAuth(connectionId: string): Promise<StreamDestinationInfo> {
-        return this.request(`/oauth/connections/${connectionId}/destination`, {}, true);
+        try {
+            return await this.request<{ providers: OAuthProvider[] }>('/oauth/providers');
+        } catch {
+            // If OAuth routes not available, return empty (use manual RTMP)
+            return { providers: [] };
+        }
     }
 
     /**
-     * Get the OAuth authorization URL for a provider
-     * Redirects user to provider's consent page (uses core service)
+     * List user's OAuth connections
+     */
+    static async listOAuthConnections(userId: string): Promise<{ connections: OAuthConnection[] }> {
+        try {
+            return await this.request<{ connections: OAuthConnection[] }>(`/oauth/connections?user_id=${userId}`);
+        } catch {
+            return { connections: [] };
+        }
+    }
+
+    /**
+     * Disconnect an OAuth account
+     */
+    static async disconnectOAuth(connectionId: string, userId: string): Promise<void> {
+        await this.request(`/oauth/connections?id=${connectionId}&user_id=${userId}`, {
+            method: 'DELETE'
+        });
+    }
+
+    /**
+     * Get RTMP destination info from OAuth connection
+     */
+    static async getStreamDestinationFromOAuth(connectionId: string, userId: string): Promise<StreamDestinationInfo> {
+        const response = await this.request<{
+            provider: string;
+            provider_username: string;
+            rtmp_url: string;
+            stream_key: string;
+        }>(`/oauth/connections/${connectionId}/destination?user_id=${userId}`);
+
+        return {
+            provider: response.provider,
+            channel_id: response.provider,
+            channel_name: response.provider_username,
+            rtmp_url: response.rtmp_url,
+            stream_key: response.stream_key,
+            is_live: false,
+        };
+    }
+
+    /**
+     * Get OAuth authorization URL for a provider
+     * Returns '#' if provider not configured (fallback to manual RTMP)
      */
     static getOAuthUrl(provider: string, userId: string, redirectUri = '/dashboard'): string {
-        const params = new URLSearchParams({
-            user_id: userId,
-            redirect_uri: redirectUri
-        });
-        return `${CORE_API_BASE}/oauth/${provider}/authorize?${params}`;
+        const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+        return `${baseUrl}/api/oauth/${provider}/authorize?user_id=${userId}&redirect_uri=${encodeURIComponent(redirectUri)}`;
     }
 
     /**
-     * Create destination from OAuth connection (fetches RTMP URL/key automatically)
+     * Create a destination from an OAuth connection
      */
-    static async createDestinationFromOAuth(roomId: string, connectionId: string): Promise<Destination> {
-        const streamInfo = await this.getStreamDestinationFromOAuth(connectionId);
-        return this.createDestination(roomId, {
-            platform: streamInfo.provider,
-            name: streamInfo.channel_name,
-            rtmp_url: streamInfo.rtmp_url,
-            stream_key: streamInfo.stream_key
+    static async createDestinationFromOAuth(connectionId: string, userId: string): Promise<Destination> {
+        // Get RTMP info from OAuth
+        const rtmpInfo = await this.getStreamDestinationFromOAuth(connectionId, userId);
+
+        // Create destination with the RTMP info
+        return this.createDestination({
+            user_id: userId,
+            platform: rtmpInfo.provider,
+            name: rtmpInfo.channel_name,
+            rtmp_url: rtmpInfo.rtmp_url,
+            stream_key: rtmpInfo.stream_key,
         });
     }
 
@@ -230,7 +280,7 @@ export class ApiClient {
         return this.request(`/rooms/${roomId}/broadcast/start`, {
             method: 'POST',
             body: JSON.stringify({ track_id: trackId })
-        }, true); // useCore = true
+        });
     }
 
     static async stopStream(roomId: string): Promise<StreamSession> {
@@ -339,7 +389,7 @@ export class ApiClient {
             current_period_end: string;
         };
     }> {
-        return this.request(`/users/${userId}/tier`, {}, true);
+        return this.request(`/users/${userId}/tier`);
     }
 
     /**
@@ -356,7 +406,7 @@ export class ApiClient {
         return this.request(`/users/${userId}/tier/validate`, {
             method: 'POST',
             body: JSON.stringify({ action, context })
-        }, true);
+        });
     }
 
     /**
@@ -372,7 +422,7 @@ export class ApiClient {
             highlights: string[];
         }>;
     }> {
-        return this.request(`/users/${userId}/tier/upgrade-options`, {}, true);
+        return this.request(`/users/${userId}/tier/upgrade-options`);
     }
 
     // ==========================================
@@ -389,20 +439,38 @@ export class ApiClient {
         return this.request('/sessions/register', {
             method: 'POST',
             body: JSON.stringify({ user_id: userId, room_id: roomId, session_id: sessionId })
-        }, true);
+        });
     }
 
     /**
      * Release a session
      */
     static async releaseSession(sessionId: string): Promise<{ success: boolean }> {
-        return this.request(`/sessions/${sessionId}/release`, { method: 'POST' }, true);
+        return this.request(`/sessions/${sessionId}/release`, { method: 'POST' });
+    }
+
+    // ==========================================
+    // ASSETS / LIBRARY
+    // ==========================================
+
+    /**
+     * List all assets (recordings + uploads)
+     */
+    static async listAssets(userId: string): Promise<{ assets: any[] }> {
+        return this.request(`/assets?user_id=${userId}`);
+    }
+
+    /**
+     * Delete an asset
+     */
+    static async deleteAsset(assetId: string, type: 'recording' | 'upload'): Promise<void> {
+        return this.request(`/assets?id=${assetId}&type=${type}`, { method: 'DELETE' });
     }
 
     /**
      * Heartbeat for session keepalive
      */
     static async sessionHeartbeat(sessionId: string): Promise<{ success: boolean; active: boolean }> {
-        return this.request(`/sessions/${sessionId}/heartbeat`, { method: 'POST' }, true);
+        return this.request(`/sessions/${sessionId}/heartbeat`, { method: 'POST' });
     }
 }

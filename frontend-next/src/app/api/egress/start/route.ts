@@ -1,6 +1,15 @@
-import { EgressClient, StreamProtocol, EncodedFileOutput, StreamOutput, RoomCompositeOptions } from 'livekit-server-sdk';
+import {
+  EgressClient,
+  StreamProtocol,
+  EncodedFileOutput,
+  StreamOutput,
+  S3Upload,
+  type RoomCompositeOptions,
+  type EncodedOutputs
+} from 'livekit-server-sdk';
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest } from 'next/server';
+import { checkRateLimit, getClientIP, RATE_LIMITS, rateLimitResponse } from '@/lib/rateLimit';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -15,6 +24,13 @@ interface StartEgressRequest {
 }
 
 export async function POST(req: NextRequest) {
+  // Rate limiting
+  const clientIP = getClientIP(req);
+  const rateLimit = checkRateLimit(clientIP, RATE_LIMITS.egress);
+  if (!rateLimit.success) {
+    return rateLimitResponse(rateLimit);
+  }
+
   try {
     const body: StartEgressRequest = await req.json();
     const { roomId, destinationIds, recordingEnabled = false, layout = 'grid' } = body;
@@ -39,27 +55,40 @@ export async function POST(req: NextRequest) {
       process.env.LIVEKIT_API_SECRET!
     );
 
-    // Build RTMP stream outputs
-    const streamOutputs: StreamOutput[] = destinations.map((dest) => ({
+    // Build stream output - for multistreaming, combine all RTMP URLs
+    const allRtmpUrls = destinations.map((dest) => `${dest.rtmp_url}/${dest.stream_key}`);
+    const streamOutput = new StreamOutput({
       protocol: StreamProtocol.RTMP,
-      urls: [`${dest.rtmp_url}/${dest.stream_key}`],
-    }));
+      urls: allRtmpUrls,
+    });
 
-    // Optional recording output
-    let fileOutputs: EncodedFileOutput[] = [];
+    // Build output configuration
+    let output: EncodedOutputs | StreamOutput;
+    
     if (recordingEnabled) {
-      fileOutputs = [{
+      // Use EncodedOutputs when we need both streaming and recording
+      const s3Upload = new S3Upload({
+        accessKey: process.env.R2_ACCESS_KEY || process.env.S3_ACCESS_KEY_ID!,
+        secret: process.env.R2_SECRET_KEY || process.env.S3_SECRET_ACCESS_KEY!,
+        bucket: process.env.R2_BUCKET || 'allstrm-recordings',
+        region: 'auto',
+        endpoint: process.env.R2_ENDPOINT || process.env.S3_ENDPOINT_URL,
+        forcePathStyle: true,
+      });
+
+      const fileOutput = new EncodedFileOutput({
         filepath: `recordings/${roomId}/${Date.now()}.mp4`,
         disableManifest: false,
-        s3: {
-          accessKey: process.env.R2_ACCESS_KEY || process.env.S3_ACCESS_KEY_ID!,
-          secret: process.env.R2_SECRET_KEY || process.env.S3_SECRET_ACCESS_KEY!,
-          bucket: process.env.R2_BUCKET || 'allstrm-recordings',
-          region: 'auto',
-          endpoint: process.env.R2_ENDPOINT || process.env.S3_ENDPOINT_URL,
-          forcePathStyle: true,
-        },
-      }];
+        output: { case: 's3', value: s3Upload },
+      });
+
+      output = {
+        file: fileOutput,
+        stream: streamOutput,
+      } as EncodedOutputs;
+    } else {
+      // Just streaming, no recording
+      output = streamOutput;
     }
 
     // Room composite options
@@ -72,10 +101,7 @@ export async function POST(req: NextRequest) {
     // Start room composite egress
     const egress = await egressClient.startRoomCompositeEgress(
       roomId,
-      {
-        streamOutputs,
-        fileOutputs: recordingEnabled ? fileOutputs : undefined,
-      },
+      output,
       options
     );
 

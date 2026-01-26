@@ -1,465 +1,808 @@
-# ALLSTRM Architecture Diagrams
+# ALLSTRM v4.1.0 - Complete Architecture Documentation
 
-This document contains architecture diagrams in PlantUML format. You can render these using:
-- [PlantUML Online](https://www.plantuml.com/plantuml/uml)
-- VS Code PlantUML extension
-- IntelliJ IDEA PlantUML plugin
+## Table of Contents
+1. [System Overview](#1-system-overview)
+2. [What Was Built](#2-what-was-built)
+3. [Database Schema](#3-database-schema)
+4. [Component Architecture](#4-component-architecture)
+5. [Key User Flows](#5-key-user-flows)
+6. [Why These Decisions](#6-why-these-decisions)
+7. [Feature Completion](#7-feature-completion)
+
+---
 
 ## 1. System Overview
+
+### High-Level Architecture
 
 ```plantuml
 @startuml ALLSTRM_System_Overview
 !theme plain
+skinparam backgroundColor #1a1a2e
+skinparam defaultFontColor #ffffff
+skinparam rectangleBorderColor #4a4a6a
 
-title ALLSTRM Streaming Platform - System Overview
+title ALLSTRM v4.1.0 - System Architecture
 
 actor "Host" as host
 actor "Guest" as guest
 actor "Viewer" as viewer
 
-cloud "Frontend (Next.js)" as frontend {
-  [Dashboard]
-  [Studio]
-  [Viewer Page]
+cloud "External Platforms" as external {
+    [YouTube]
+    [Twitch]
+    [Facebook]
+    [Custom RTMP]
 }
 
-cloud "ALLSTRM Backend" as backend {
-  package "Cloud Services" {
-    [Gateway\n:8080] as gateway
-    [Core\n:8081] as core
-    [Storage\n:8084] as storage
-  }
-
-  package "Edge Services" {
-    [SFU\n:8082] as sfu
-    [Stream\n:8083] as stream
-  }
+package "Browser (Client)" as browser {
+    [Next.js Frontend\n(React 19 + TypeScript)]
+    [LiveKit Client SDK]
+    [Supabase Client]
 }
 
+package "Backend Services" as backend {
+    [Next.js API Routes\n(Rate Limited)]
+    [Supabase Auth\n(JWT + OAuth)]
+    [PostgreSQL\n(3 Schemas)]
+}
+
+package "Media Infrastructure" as media {
+    [LiveKit Server\n(WebRTC SFU)]
+    [LiveKit Egress\n(Recording + RTMP)]
+    [Redis\n(Session State)]
+    [MinIO/R2\n(Storage)]
+}
+
+host --> browser
+guest --> browser
+viewer --> browser
+
+browser --> [Next.js API Routes\n(Rate Limited)] : REST API
+browser --> [LiveKit Client SDK] : WebRTC
+browser --> [Supabase Client] : Auth + DB
+
+[Next.js API Routes\n(Rate Limited)] --> [Supabase Auth\n(JWT + OAuth)]
+[Next.js API Routes\n(Rate Limited)] --> [PostgreSQL\n(3 Schemas)]
+[Next.js API Routes\n(Rate Limited)] --> [LiveKit Server\n(WebRTC SFU)]
+
+[LiveKit Client SDK] --> [LiveKit Server\n(WebRTC SFU)] : WebRTC + Data Channel
+
+[LiveKit Server\n(WebRTC SFU)] --> [LiveKit Egress\n(Recording + RTMP)]
+[LiveKit Server\n(WebRTC SFU)] --> [Redis\n(Session State)]
+
+[LiveKit Egress\n(Recording + RTMP)] --> [MinIO/R2\n(Storage)] : Recordings
+[LiveKit Egress\n(Recording + RTMP)] --> external : RTMP Streams
+
+@enduml
+```
+
+### What This Diagram Shows
+- **Three user roles**: Host (full control), Guest (limited permissions), Viewer (watch only)
+- **Client layer**: Next.js frontend with LiveKit SDK for real-time media
+- **Backend layer**: API routes with rate limiting, Supabase for auth and database
+- **Media layer**: LiveKit handles all WebRTC complexity, Egress handles streaming out
+
+---
+
+## 2. What Was Built
+
+### Technology Stack
+
+| Layer | Technology | Purpose |
+|-------|------------|---------|
+| **Frontend** | Next.js 16 + React 19 | UI rendering, SSR |
+| **State** | React Hooks + Context | No Redux needed |
+| **Styling** | Tailwind CSS 4 | Utility-first CSS |
+| **WebRTC** | LiveKit Client SDK | Real-time media |
+| **Auth** | Supabase Auth | JWT + OAuth providers |
+| **Database** | PostgreSQL 15+ | Via Supabase |
+| **SFU** | LiveKit Server | WebRTC routing |
+| **Egress** | LiveKit Egress | RTMP + Recording |
+| **Storage** | MinIO (dev) / R2 (prod) | S3-compatible |
+| **Cache** | Redis 7 | LiveKit state |
+
+### Directory Structure
+
+```
+allstrm-backend/
+├── frontend-next/
+│   └── src/
+│       ├── app/                    # Next.js App Router
+│       │   ├── api/               # API Routes (rate-limited)
+│       │   │   ├── rooms/         # Room CRUD + token generation
+│       │   │   ├── egress/        # Start/stop streaming
+│       │   │   ├── destinations/  # RTMP destinations
+│       │   │   ├── oauth/         # Platform OAuth flows
+│       │   │   └── users/         # User tier info
+│       │   ├── studio/[roomId]/   # Host interface
+│       │   ├── meeting/[roomId]/  # Guest interface
+│       │   ├── dashboard/         # Room management
+│       │   └── login/, signup/    # Auth pages
+│       ├── components/
+│       │   ├── Studio.tsx         # Main host component (~1000 lines)
+│       │   ├── Meeting.tsx        # Guest view
+│       │   ├── ErrorBoundary.tsx  # Error handling
+│       │   ├── GreenRoom/         # Pre-call device setup
+│       │   └── studio/            # Sub-components
+│       ├── hooks/
+│       │   └── useAllstrmLiveKit.ts  # Core LiveKit integration (~1660 lines)
+│       ├── contexts/
+│       │   └── AuthContext.tsx    # Auth + tier + multi-tab
+│       ├── lib/
+│       │   ├── api.ts             # API client
+│       │   ├── rateLimit.ts       # Rate limiting utility
+│       │   └── constants.ts       # Config
+│       ├── types/
+│       │   └── index.ts           # TypeScript interfaces
+│       └── utils/
+│           ├── permissions.ts     # Tier-based feature gating
+│           └── layoutEngine.ts    # Video layout calculations
+├── migrations/
+│   └── 003_consolidated_all.sql   # Complete DB schema (v4.1.0)
+├── docs/
+│   ├── ARCHITECTURE.md            # High-level design
+│   └── architecture/
+│       └── DIAGRAMS.md            # This file
+└── docker-compose.yml             # Local dev stack
+```
+
+---
+
+## 3. Database Schema
+
+### Entity Relationship Diagram
+
+```plantuml
+@startuml ALLSTRM_Database_ERD
+!theme plain
+skinparam backgroundColor #1a1a2e
+skinparam defaultFontColor #ffffff
+
+title ALLSTRM Database Schema v4.1.0
+
+package "core schema" as core {
+    entity "users" as users {
+        * id : UUID <<PK>>
+        --
+        email : VARCHAR(255) <<unique>>
+        display_name : VARCHAR(128)
+        avatar_url : TEXT
+        plan : VARCHAR(32)
+        settings : JSONB
+        created_at : TIMESTAMPTZ
+        updated_at : TIMESTAMPTZ
+    }
+
+    entity "organizations" as orgs {
+        * id : UUID <<PK>>
+        --
+        name : VARCHAR(128)
+        slug : VARCHAR(64) <<unique>>
+        billing_tier : VARCHAR(32)
+        stripe_customer_id : VARCHAR(64)
+        max_rooms : INTEGER
+        max_participants_per_room : INTEGER
+        max_stream_hours_monthly : INTEGER
+        max_destinations : INTEGER
+        features : JSONB
+    }
+
+    entity "organization_members" as org_members {
+        * id : UUID <<PK>>
+        --
+        organization_id : UUID <<FK>>
+        user_id : UUID <<FK>>
+        role : VARCHAR(32)
+        permissions : JSONB
+    }
+
+    entity "rooms" as rooms {
+        * id : UUID <<PK>>
+        --
+        organization_id : UUID <<FK>>
+        owner_id : UUID <<FK>>
+        name : VARCHAR(255)
+        mode : VARCHAR(32)
+        status : VARCHAR(32)
+        settings : JSONB
+        stream_config : JSONB
+    }
+
+    entity "room_participants" as participants {
+        * id : UUID <<PK>>
+        --
+        room_id : UUID <<FK>>
+        user_id : UUID <<FK>>
+        display_name : VARCHAR(128)
+        role : VARCHAR(32)
+        is_in_waiting_room : BOOLEAN
+        is_on_stage : BOOLEAN
+    }
+
+    entity "room_guest_permissions" as guest_perms {
+        * room_id : UUID <<PK,FK>>
+        --
+        can_toggle_audio : BOOLEAN
+        can_toggle_video : BOOLEAN
+        can_share_screen : BOOLEAN
+        can_send_chat : BOOLEAN
+    }
+}
+
+package "stream schema" as stream {
+    entity "destinations" as dests {
+        * id : UUID <<PK>>
+        --
+        room_id : UUID <<FK>>
+        user_id : UUID <<FK>>
+        platform : VARCHAR(32)
+        name : VARCHAR(128)
+        rtmp_url_encrypted : TEXT
+        stream_key_encrypted : TEXT
+        enabled : BOOLEAN
+        status : VARCHAR(32)
+    }
+
+    entity "health_metrics" as health {
+        * room_id : UUID <<PK>>
+        --
+        input_bitrate_kbps : INTEGER
+        input_fps : REAL
+        destinations_connected : INTEGER
+        packet_loss_percent : REAL
+    }
+}
+
+package "assets schema" as assets {
+    entity "recordings" as recs {
+        * id : UUID <<PK>>
+        --
+        room_id : UUID <<FK>>
+        organization_id : UUID <<FK>>
+        recording_type : VARCHAR(32)
+        r2_key : VARCHAR(512)
+        duration_seconds : INTEGER
+        status : VARCHAR(32)
+    }
+
+    entity "uploads" as uploads {
+        * id : UUID <<PK>>
+        --
+        room_id : UUID <<FK>>
+        asset_type : VARCHAR(32)
+        s3_key : VARCHAR(512)
+        size_bytes : BIGINT
+    }
+}
+
+package "public schema" as pub {
+    entity "oauth_connections" as oauth {
+        * id : UUID <<PK>>
+        --
+        user_id : UUID
+        provider : VARCHAR(32)
+        provider_user_id : VARCHAR(255)
+        access_token_encrypted : TEXT
+        refresh_token_encrypted : TEXT
+        is_active : BOOLEAN
+    }
+
+    entity "youtube_broadcasts" as yt {
+        * id : UUID <<PK>>
+        --
+        connection_id : UUID <<FK>>
+        broadcast_id : VARCHAR(64)
+        ingestion_address : TEXT
+        status : VARCHAR(32)
+    }
+}
+
+' Relationships
+users ||--o{ org_members : "belongs to"
+orgs ||--o{ org_members : "has"
+orgs ||--o{ rooms : "owns"
+users ||--o{ rooms : "creates"
+rooms ||--o{ participants : "has"
+rooms ||--|| guest_perms : "configures"
+rooms ||--o{ dests : "streams to"
+rooms ||--o{ recs : "produces"
+rooms ||--o{ uploads : "stores"
+users ||--o{ oauth : "connects"
+oauth ||--o{ yt : "creates"
+
+@enduml
+```
+
+### Schema Design Rationale
+
+| Schema | Purpose | Why Separate? |
+|--------|---------|---------------|
+| **core** | Users, orgs, rooms | Core business logic, frequently queried |
+| **stream** | RTMP, health metrics | Hot data with frequent updates |
+| **assets** | Recordings, uploads | Large file metadata, separate scaling |
+| **public** | OAuth connections | Supabase Auth integration, RLS policies |
+
+### Key Constraints Added in v4.1.0
+- ✅ FK constraints on `stream.destinations` → `core.rooms`, `core.users`
+- ✅ `broadcast` tier added to plan CHECK constraints
+- ✅ Removed duplicate `is_enabled` column
+- ✅ Consolidated oauth_connections to public schema
+
+---
+
+## 4. Component Architecture
+
+### Frontend Component Hierarchy
+
+```plantuml
+@startuml ALLSTRM_Component_Architecture
+!theme plain
+skinparam backgroundColor #1a1a2e
+skinparam defaultFontColor #ffffff
+
+title ALLSTRM Frontend Component Architecture
+
+package "App Shell" as shell {
+    [Providers] as providers
+    [ErrorBoundary] as errbound
+    [AuthContext] as auth
+}
+
+package "Pages" as pages {
+    [Dashboard] as dash
+    [Studio Page] as studio_page
+    [Meeting Page] as meeting_page
+    [Login/Signup] as login
+}
+
+package "Studio Components" as studio_comps {
+    [Studio.tsx] as studio
+    [Stage] as stage
+    [VideoFeed] as vfeed
+    [BrandingPanel] as brand
+    [Destinations] as dests
+    [GreenRoom] as green
+    [WaitingRoom] as waiting
+    [StreamHealthMonitor] as health
+}
+
+package "Hooks" as hooks {
+    [useAllstrmLiveKit] as hook
+    [useStudioEngines] as engines
+}
+
+package "External Services" as external {
+    [LiveKit Server] as lk
+    [Supabase] as sb
+}
+
+providers --> errbound
+errbound --> auth
+auth --> pages
+
+dash --> hook
+studio_page --> studio
+meeting_page --> [Meeting.tsx]
+
+studio --> stage
+studio --> brand
+studio --> dests
+studio --> green
+studio --> waiting
+studio --> health
+
+stage --> vfeed
+
+studio --> hook
+hook --> lk : WebRTC
+hook --> sb : Auth + DB
+
+@enduml
+```
+
+### useAllstrmLiveKit Hook - The Core
+
+This is the heart of the application (~1660 lines). It handles:
+
+```plantuml
+@startuml useAllstrmLiveKit_Responsibilities
+!theme plain
+skinparam backgroundColor #1a1a2e
+skinparam defaultFontColor #ffffff
+
+title useAllstrmLiveKit Hook Responsibilities
+
+package "useAllstrmLiveKit" {
+
+    package "Connection" {
+        [connect()]
+        [disconnect()]
+        [prepareCamera()]
+    }
+
+    package "Media Control" {
+        [toggleVideo()]
+        [toggleAudio()]
+        [startScreenShare()]
+        [stopScreenShare()]
+        [switchDevice()]
+    }
+
+    package "Participant Management" {
+        [admitParticipant()]
+        [toggleStageStatus()]
+        [removeParticipant()]
+        [updatePermissions()]
+    }
+
+    package "Broadcast" {
+        [startBroadcast()]
+        [stopBroadcast()]
+        [addDestination()]
+        [toggleDestination()]
+    }
+
+    package "Recording" {
+        [startRecording()]
+        [stopRecording()]
+        note right: WYSIWYG via\ncanvas compositing
+    }
+
+    package "Communication" {
+        [sendChatMessage()]
+        [sendDataMessage()]
+        [handleDataReceived()]
+    }
+
+    package "State" {
+        [participants]
+        [localStream]
+        [screenStream]
+        [broadcastStatus]
+        [chatMessages]
+        [wasKicked]
+    }
+}
+
+@enduml
+```
+
+---
+
+## 5. Key User Flows
+
+### Flow 1: Host Creates and Starts a Stream
+
+```plantuml
+@startuml Host_Stream_Flow
+!theme plain
+skinparam backgroundColor #1a1a2e
+skinparam defaultFontColor #ffffff
+skinparam sequenceArrowColor #4a9eff
+
+title Host Creates and Starts a Stream
+
+actor Host
+participant "Dashboard" as dash
+participant "Studio" as studio
+participant "API Routes" as api
+participant "LiveKit" as lk
+participant "Egress" as egress
 database "PostgreSQL" as db
-database "Redis" as redis
-cloud "Cloudflare R2" as r2
 
-host --> [Studio] : Manage Room
-guest --> [Studio] : Join Room
-viewer --> [Viewer Page] : Watch HLS
+Host -> dash : Click "New Room"
+dash -> api : POST /api/rooms
+api -> db : INSERT into core.rooms
+db --> api : room_id
+api --> dash : { id, name }
 
-[Dashboard] --> gateway : REST API
-[Studio] --> gateway : WebSocket
-[Viewer Page] --> stream : HLS Segments
+Host -> dash : Click "Enter Studio"
+dash -> studio : Navigate with roomId
 
-gateway --> core : Proxy
-gateway --> sfu : WebSocket Forward
-gateway --> storage : Proxy
+studio -> api : POST /api/rooms/{id}/token
+note right: Rate limited\n30 req/min
+api -> lk : Generate JWT
+lk --> api : token
+api --> studio : { token, serverUrl }
 
-core --> db : SQL
-sfu --> redis : Pub/Sub
-stream --> redis : State
-storage --> r2 : S3 API
+studio -> lk : room.connect(url, token)
+lk --> studio : RoomEvent.Connected
 
-sfu <--> stream : Media Relay
+Host -> studio : Add RTMP destination
+studio -> api : POST /api/destinations
+api -> db : INSERT into stream.destinations
+
+Host -> studio : Click "Go Live"
+studio -> api : POST /api/egress/start
+note right: Rate limited\n10 req/min
+api -> egress : startRoomCompositeEgress()
+egress -> egress : Capture room video
+egress --> api : egressId
+api --> studio : { egressId, status: 'live' }
+
+egress -> egress : Push RTMP to YouTube/Twitch
 
 @enduml
 ```
 
-## 2. Service Architecture
+### Flow 2: Guest Joins via Waiting Room
 
 ```plantuml
-@startuml ALLSTRM_Service_Architecture
+@startuml Guest_Join_Flow
 !theme plain
+skinparam backgroundColor #1a1a2e
+skinparam defaultFontColor #ffffff
+skinparam sequenceArrowColor #4a9eff
 
-title ALLSTRM Microservices Architecture
+title Guest Joins via Waiting Room
 
-package "Gateway Service (8080)" as gateway_pkg {
-  [Auth Middleware]
-  [Rate Limiter]
-  [WebSocket Handler]
-  [Proxy Router]
-}
+actor Guest
+actor Host
+participant "Join Page" as join
+participant "GreenRoom" as green
+participant "Meeting" as meeting
+participant "LiveKit" as lk
 
-package "Core Service (8081)" as core_pkg {
-  [Room Management]
-  [User Management]
-  [Organization Management]
-  [Destination Management]
-  [API Key Management]
-}
+Guest -> join : Open invite link\n/join/room123?role=guest
+join -> green : Show device setup
 
-package "SFU Service (8082)" as sfu_pkg {
-  [Peer Connection Manager]
-  [Track Router]
-  [Signaling Handler]
-  [Room Manager]
-}
+Guest -> green : Select camera/mic
+green -> green : Preview video
 
-package "Stream Service (8083)" as stream_pkg {
-  [FFmpeg Manager]
-  [RTMP Handler]
-  [HLS Generator]
-  [Session Manager]
-  [Stats Collector]
-}
+Guest -> green : Click "Join"
+green -> meeting : Navigate with config
 
-package "Storage Service (8084)" as storage_pkg {
-  [Recording Manager]
-  [Presigned URL Generator]
-  [Asset Manager]
-  [S3 Client]
-}
+meeting -> lk : POST /api/rooms/{id}/token\n{ role: 'guest' }
+note right: Token includes\nmetadata.inWaitingRoom = true
 
-database "PostgreSQL" as db {
-  [core schema]
-  [stream schema]
-  [assets schema]
-}
+meeting -> lk : room.connect()
+lk --> meeting : Connected
 
-database "Redis" as redis
+meeting -> meeting : Show "Waiting for host..."
+note right: Guest sees\nwaiting room UI
 
-cloud "Cloudflare R2" as r2
+lk -> Host : ParticipantConnected event
+Host -> Host : See guest in waiting panel
 
-[Auth Middleware] --> [Room Management] : validate
-[WebSocket Handler] --> [Signaling Handler] : forward
-[Proxy Router] --> [Room Management]
-[Proxy Router] --> [Recording Manager]
+Host -> lk : sendDataMessage(\n{ type: 'admission', targetId })
 
-[Room Management] --> [core schema]
-[Session Manager] --> [stream schema]
-[Recording Manager] --> [assets schema]
+lk -> meeting : DataReceived event
+meeting -> meeting : Remove waiting overlay
+meeting -> meeting : sessionStorage.admitted = true
 
-[Peer Connection Manager] --> redis : session state
-[FFmpeg Manager] --> redis : job queue
-[Track Router] --> [FFmpeg Manager] : media
-
-[S3 Client] --> r2 : upload/download
+Host -> lk : sendDataMessage({ type: 'stageSync', participants })
+lk -> meeting : Apply stage state
 
 @enduml
 ```
 
-## 3. WebRTC Signaling Flow
+### Flow 3: WYSIWYG Recording
 
 ```plantuml
-@startuml WebRTC_Signaling
+@startuml Recording_Flow
 !theme plain
+skinparam backgroundColor #1a1a2e
+skinparam defaultFontColor #ffffff
 
-title WebRTC Connection Flow
+title WYSIWYG Recording Flow
 
-participant "Client" as client
-participant "Gateway" as gateway
-participant "SFU" as sfu
-participant "Track Router" as router
-participant "Redis" as redis
+participant "Host" as host
+participant "Stage\n(DOM Element)" as stage
+participant "Canvas\n(1920x1080)" as canvas
+participant "MediaRecorder" as recorder
+participant "Browser" as browser
 
-== Join Room ==
-client -> gateway: WS Connect
-gateway -> sfu: HTTP POST /join
-sfu -> redis: Create session
-sfu --> gateway: { participant_id, ice_servers }
-gateway --> client: JoinAccepted
+host -> host : Click "Record"
 
-== SDP Exchange ==
-client -> gateway: WS: SdpOffer
-gateway -> sfu: POST /offer
-sfu -> sfu: Create PeerConnection
-sfu -> router: Register participant
-sfu --> gateway: SDP Answer
-gateway --> client: WS: SdpAnswer
+host -> stage : Get stageRef
+note right: Stage contains:\n- VideoFeeds\n- Branding\n- Overlays
 
-== ICE Candidates ==
-client -> gateway: WS: IceCandidate
-gateway -> sfu: POST /ice-candidate
-sfu -> sfu: Add ICE candidate
-note right: Repeat for each candidate
+loop Every frame (30 fps)
+    stage -> canvas : drawImage(stageRef, 0, 0)
+    canvas -> canvas : captureStream(30)
+end
 
-== Media Flowing ==
-client -> sfu: WebRTC Media (UDP)
-sfu -> router: RTP Packets
-router -> sfu: Forward to subscribers
-sfu -> client: WebRTC Media (UDP)
+canvas -> recorder : new MediaRecorder(stream)
+recorder -> recorder : Start recording\nwebm/vp8+opus
+
+note over recorder: Recording in progress...\nExact WYSIWYG output
+
+host -> host : Click "Stop"
+recorder -> recorder : Stop recording
+recorder -> browser : ondataavailable(blob)
+browser -> browser : Download .webm file
 
 @enduml
 ```
 
-## 4. Streaming Pipeline
+### Flow 4: Permission Control
 
 ```plantuml
-@startuml Streaming_Pipeline
+@startuml Permission_Flow
 !theme plain
+skinparam backgroundColor #1a1a2e
+skinparam defaultFontColor #ffffff
 
-title Media Processing Pipeline
+title Host Controls Guest Permissions
 
-rectangle "Input Sources" {
-  [WebRTC Track] as webrtc
-  [RTMP Input] as rtmp
-  [SRT Input] as srt
-}
+actor Host
+actor Guest
+participant "GuestPermissionsPanel" as panel
+participant "LiveKit\nData Channel" as lk
+participant "Guest UI" as ui
 
-rectangle "SFU Service" {
-  [Track Router] as router
-  [Compositor] as compositor
-}
+Host -> panel : Toggle "Can Share Screen" OFF
 
-rectangle "Stream Service" {
-  [FFmpeg Manager] as ffmpeg
-  [HLS Generator] as hls
-  [RTMP Relay] as relay
-}
+panel -> lk : sendDataMessage({\n  type: 'permission',\n  targetId: guestId,\n  permissions: {\n    canShareScreen: false\n  }\n})
 
-rectangle "Outputs" {
-  [HLS Segments] as segments
-  [YouTube] as yt
-  [Twitch] as tw
-  [Recording] as rec
-}
+lk -> Guest : DataReceived event
 
-webrtc --> router : RTP
-rtmp --> ffmpeg : RTMP
-srt --> ffmpeg : SRT
+Guest -> ui : setReceivedPermissions(...)
 
-router --> compositor : tracks
-compositor --> ffmpeg : composed stream
+ui -> ui : Check permissions\nbefore each action
 
-ffmpeg --> hls : encode
-ffmpeg --> relay : copy
-ffmpeg --> rec : encode
+ui -> ui : Screen Share button\nshows lock icon,\ndisabled state
 
-hls --> segments : .ts files
-relay --> yt : RTMP
-relay --> tw : RTMP
+note over ui: Guest sees:\n"Screen sharing is\ndisabled by host"
 
 @enduml
 ```
 
-## 5. Data Flow
+---
+
+## 6. Why These Decisions
+
+### Why LiveKit instead of Custom SFU?
+
+| Aspect | Custom SFU (Old v1) | LiveKit (v4) |
+|--------|---------------------|--------------|
+| **Code to maintain** | ~15,000 lines Rust | 0 lines |
+| **Features** | Basic SFU | Simulcast, Dynacast, Recording |
+| **Time to production** | 6+ months | 2 weeks |
+| **Scaling** | Custom k8s setup | LiveKit Cloud |
+| **Cost** | High DevOps burden | $0.004/participant-minute |
+
+**Decision**: Outsource undifferentiated heavy lifting. Focus on product features.
+
+### Why Supabase instead of Custom Auth?
+
+| Aspect | Custom Auth | Supabase |
+|--------|-------------|----------|
+| **JWT handling** | Manual | Built-in |
+| **OAuth providers** | Implement each | Toggle on |
+| **Row-level security** | Build from scratch | SQL policies |
+| **Realtime** | WebSocket server | Built-in |
+
+**Decision**: Auth is a solved problem. Don't reinvent.
+
+### Why Schema Partitioning?
+
+```
+core schema   → Users, Rooms (frequently read, rarely updated)
+stream schema → Health metrics (hot table, updates every second)
+assets schema → Recordings (large files, separate backup strategy)
+```
+
+**Decision**: Prevent hot tables (health_metrics) from blocking core operations. Allows independent scaling.
+
+### Why Client-Side Recording?
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| **Server-side (Egress)** | Higher quality, ISO tracks | Costs $$$, delayed access |
+| **Client-side (Canvas)** | Instant, free, WYSIWYG | Browser-dependent |
+
+**Decision**: Start with client-side for immediate value. Add server-side for Pro+ tiers.
+
+### Why In-Memory Rate Limiting?
+
+```typescript
+// Simple, effective, no external dependencies
+const rateLimitStore = new Map<string, RateLimitEntry>();
+```
+
+**Decision**: Good enough for single-instance. Can swap to Redis for multi-instance later.
+
+---
+
+## 7. Feature Completion
+
+### What Works Now (v4.1.0)
 
 ```plantuml
-@startuml Data_Flow
+@startuml Feature_Completion
 !theme plain
+skinparam backgroundColor #1a1a2e
+skinparam defaultFontColor #ffffff
 
-title Data Flow Between Services
+title Feature Completion Status
 
-rectangle "Client Apps" as clients {
-  [Web App]
-  [Web Browser - Desktop]
-  [Web Browser - Mobile]
+package "100% Complete" as complete #2d5a3d {
+    [Studio Interface]
+    [Meeting Interface]
+    [Waiting Room]
+    [Guest Admission]
+    [Permission System]
+    [WYSIWYG Recording]
+    [Multi-destination RTMP]
+    [Presentation Pinning]
+    [Zoom/Pan Controls]
+    [Screen Sharing]
+    [Device Selection]
+    [Auth + Sessions]
+    [Tier-based Features]
+    [Rate Limiting]
+    [Error Boundaries]
 }
 
-rectangle "Gateway" as gw {
-  [REST API]
-  [WebSocket]
+package "Partially Working" as partial #5a5a2d {
+    [Branding Panel]
+    note right: Works but needs\nUI polish
+
+    [Virtual Background]
+    note right: MediaPipe not\nsegmenting properly
 }
 
-rectangle "Services" as services {
-  [Core] as core
-  [SFU] as sfu
-  [Stream] as stream
-  [Storage] as storage
+package "Not Started (Phase 2)" as future #5a2d2d {
+    [ISO Recording]
+    [Analytics Dashboard]
+    [Stripe Integration]
+    [Usage Metering]
+    [Mobile App]
 }
-
-database "Databases" as dbs {
-  [PostgreSQL] as pg
-  [Redis] as redis
-}
-
-cloud "External" as ext {
-  [R2/S3] as r2
-  [CDN] as cdn
-  [Platforms] as platforms
-}
-
-[Web App] --> [REST API] : HTTP
-[Web App] --> [WebSocket] : WS
-[Web Browser - Desktop] --> sfu : WebRTC
-
-[REST API] --> core : room CRUD
-[REST API] --> storage : recordings
-[WebSocket] --> sfu : signaling
-
-core --> pg : SQL
-sfu --> redis : pub/sub
-stream --> redis : state
-storage --> r2 : files
-
-stream --> cdn : HLS
-stream --> platforms : RTMP
 
 @enduml
 ```
 
-## 6. Database Schema
+### API Endpoints Status
 
-```plantuml
-@startuml Database_Schema
-!theme plain
+| Endpoint | Method | Rate Limit | Status |
+|----------|--------|------------|--------|
+| `/api/rooms` | GET/POST/PATCH/DELETE | 20/min | ✅ Working |
+| `/api/rooms/[id]/token` | POST | 30/min | ✅ Working |
+| `/api/egress/start` | POST | 10/min | ✅ Working |
+| `/api/egress/stop` | POST | 10/min | ✅ Working |
+| `/api/destinations` | GET/POST/PATCH/DELETE | 30/min | ✅ Working |
+| `/api/oauth/[provider]/authorize` | POST | 20/min | ✅ Working |
+| `/api/oauth/[provider]/callback` | GET | 20/min | ✅ Working |
+| `/api/users/[id]/tier` | GET | 100/min | ✅ Working |
 
-title Database Schema (Simplified)
+### Database Health
 
-package "core schema" {
-  entity "users" {
-    * id : UUID <<PK>>
-    --
-    email : VARCHAR
-    display_name : VARCHAR
-    plan : VARCHAR
-  }
+- ✅ All FK constraints in place
+- ✅ Indexes on frequently queried columns
+- ✅ RLS policies on all user-facing tables
+- ✅ Triggers for `updated_at` auto-update
+- ✅ Cleanup functions for stale data
 
-  entity "organizations" {
-    * id : UUID <<PK>>
-    --
-    name : VARCHAR
-    slug : VARCHAR
-    billing_tier : VARCHAR
-  }
+---
 
-  entity "rooms" {
-    * id : UUID <<PK>>
-    --
-    organization_id : UUID <<FK>>
-    owner_id : UUID
-    name : VARCHAR
-    mode : VARCHAR
-    status : VARCHAR
-  }
+## Rendering These Diagrams
 
-  entity "room_participants" {
-    * id : UUID <<PK>>
-    --
-    room_id : UUID <<FK>>
-    user_id : UUID <<FK>>
-    display_name : VARCHAR
-    role : VARCHAR
-  }
-}
-
-package "stream schema" {
-  entity "destinations" {
-    * id : UUID <<PK>>
-    --
-    room_id : UUID
-    platform : VARCHAR
-    rtmp_url : TEXT
-    enabled : BOOLEAN
-  }
-
-  entity "health_metrics" {
-    * room_id : UUID <<PK>>
-    --
-    input_bitrate_kbps : INT
-    destinations_connected : INT
-  }
-}
-
-package "assets schema" {
-  entity "recordings" {
-    * id : UUID <<PK>>
-    --
-    room_id : UUID
-    s3_key : VARCHAR
-    status : VARCHAR
-    duration_seconds : INT
-  }
-
-  entity "uploads" {
-    * id : UUID <<PK>>
-    --
-    room_id : UUID
-    asset_type : VARCHAR
-    s3_key : VARCHAR
-  }
-}
-
-users ||--o{ room_participants
-rooms ||--o{ room_participants
-organizations ||--o{ rooms
-rooms ||--o{ destinations
-rooms ||--o{ recordings
-
-@enduml
-```
-
-## 7. Deployment Architecture
-
-```plantuml
-@startuml Deployment_Architecture
-!theme plain
-
-title Hybrid Deployment Architecture
-
-cloud "Cloud Provider (AWS/GCP/CF)" as cloud {
-  node "Load Balancer" as lb
-
-  node "Cloud Services" as cloud_svc {
-    [Gateway x3]
-    [Core x2]
-    [Storage x2]
-  }
-
-  database "PostgreSQL" as pg
-  database "Redis Cluster" as redis
-  storage "R2/S3" as r2
-}
-
-cloud "Edge Location 1" as edge1 {
-  node "Edge Server" as es1 {
-    [SFU]
-    [Stream]
-    storage "Local SSD" as ssd1
-  }
-}
-
-cloud "Edge Location 2" as edge2 {
-  node "Edge Server" as es2 {
-    [SFU]
-    [Stream]
-    storage "Local SSD" as ssd2
-  }
-}
-
-cloud "CDN (Cloudflare)" as cdn
-
-actor "Users" as users
-
-users --> cdn : HLS
-users --> lb : API/WS
-cdn --> es1 : origin pull
-cdn --> es2 : origin pull
-
-lb --> [Gateway x3]
-[Gateway x3] --> [Core x2]
-[Gateway x3] --> [Storage x2]
-[Gateway x3] --> es1 : route
-[Gateway x3] --> es2 : route
-
-[Core x2] --> pg
-[SFU] --> redis
-[Stream] --> redis
-[Storage x2] --> r2
-
-es1 --> ssd1 : HLS segments
-es2 --> ssd2 : HLS segments
-
-@enduml
-```
-
-## Rendering Instructions
-
-### Using PlantUML Online
-
-1. Go to https://www.plantuml.com/plantuml/uml
-2. Copy the PlantUML code block (including `@startuml` and `@enduml`)
-3. Paste and view the rendered diagram
-
-### Using VS Code
-
-1. Install "PlantUML" extension
-2. Open this file
-3. Press `Alt+D` to preview diagrams
-
-### Export as PNG/SVG
-
+### Option 1: PlantUML Server
 ```bash
-# Using PlantUML CLI
-java -jar plantuml.jar docs/architecture/DIAGRAMS.md -o output/
-
-# Using Docker
-docker run -v $(pwd):/data plantuml/plantuml DIAGRAMS.md
+# Using PlantUML public server
+curl -X POST -d "@diagram.puml" http://www.plantuml.com/plantuml/png/
 ```
+
+### Option 2: Local PlantUML
+```bash
+# Install PlantUML
+brew install plantuml  # macOS
+sudo apt install plantuml  # Ubuntu
+
+# Generate PNG
+plantuml DIAGRAMS.md
+```
+
+### Option 3: VS Code Extension
+Install "PlantUML" extension by jebbs, then use `Alt+D` to preview.
+
+### Option 4: Online Editors
+- [PlantUML Web Server](http://www.plantuml.com/plantuml/uml/)
+- [PlantText](https://www.planttext.com/)
+
+---
+
+*Last Updated: January 26, 2026 - Version 4.1.0*

@@ -25,7 +25,7 @@ export const Signup: React.FC<SignupProps> = ({ onNavigateToLogin }) => {
         setError(null);
 
         try {
-            const { error: authError } = await signUp(email, password);
+            const { error: authError } = await signUp(email, password, fullName);
 
             if (authError) {
                 throw authError;

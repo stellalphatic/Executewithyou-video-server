@@ -13,7 +13,7 @@ import {
     FolderOpen, Film, Layers, Palette, Grid, Copy, Smartphone,
     Play, Square, Layout, Check, MousePointer2, AlertCircle, Wand2, Upload, Sliders, Activity, Keyboard, Disc, GripVertical, Box,
     Cpu, Wifi, HardDrive, BarChart3, Radio, StopCircle, Lock as LockIcon, RefreshCw, Pause, PlayCircle, ShieldAlert, Volume2, VolumeX, Send, UserCheck,
-    FileVideo, Clock, CircleDot, UserX, Camera, FileText, ChevronLeft, ChevronRight, Maximize, Minimize, Move, StopCircle as StopIcon, ZoomIn, ZoomOut, Minus, Plus as PlusIcon,
+    FileVideo, Clock, CircleDot, UserX, Camera, FileText, ChevronLeft, ChevronRight, Maximize, Minimize, Move, StopCircle as StopIcon, ZoomIn, ZoomOut, Minus, Plus as PlusIcon, RotateCcw,
     ArrowRight, Globe, AlertTriangle, Shield
 } from 'lucide-react';
 import { useAllstrmLiveKit } from '@/hooks/useAllstrmLiveKit';
@@ -24,7 +24,7 @@ import { Participant, StudioConfiguration, BrandConfig, Banner, LayoutState, Ove
 import { Scene as EngineScene, SceneItem } from '../types/layout';
 import { Destinations } from './Destinations';
 import { VideoProcessor } from '@/utils/VideoProcessor';
-import { isFeatureEnabled, hasHostPermissions, getUpgradeMessage, FeatureId, GuestPermissionConfig, DEFAULT_GUEST_PERMISSIONS } from '@/utils/permissions';
+import { isFeatureEnabled, hasHostPermissions, getUpgradeMessage, FeatureId, GuestPermissionConfig, DEFAULT_GUEST_PERMISSIONS, PerGuestPermissions } from '@/utils/permissions';
 import { GreenRoom } from './GreenRoom/GreenRoom';
 import { UploadQueue } from './UploadQueue';
 import { calculateLayout } from '@/utils/layoutEngine';
@@ -122,23 +122,27 @@ const LayoutButton = ({ icon, active, onClick, disabled, lockedMessage }: any) =
     </button>
 );
 
-const ControlBtn = ({ icon, label, isActiveState, danger, hotkey, className, ...props }: any) => (
+const ControlBtn = ({ icon, label, isActiveState, danger, hotkey, className, locked, lockedMessage, ...props }: any) => (
     <div className="relative group">
         <button
-            className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-200 
-            ${danger
-                    ? 'bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white border border-red-500/20'
-                    : isActiveState === false
-                        ? 'bg-red-500 text-white hover:bg-red-600 border border-transparent shadow-lg shadow-red-500/20'
-                        : 'bg-app-surface text-content-high hover:bg-indigo-500 hover:text-white border border-app-border hover:border-indigo-500 hover:shadow-lg hover:shadow-indigo-500/20'
+            disabled={locked}
+            className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-200 relative
+            ${locked
+                    ? 'bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700 opacity-60'
+                    : danger
+                        ? 'bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white border border-red-500/20'
+                        : isActiveState === false
+                            ? 'bg-red-500 text-white hover:bg-red-600 border border-transparent shadow-lg shadow-red-500/20'
+                            : 'bg-app-surface text-content-high hover:bg-indigo-500 hover:text-white border border-app-border hover:border-indigo-500 hover:shadow-lg hover:shadow-indigo-500/20'
                 } ${className || ''}`}
             {...props}
         >
             {React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement<any>, { size: 20 }) : icon}
+            {locked && <LockIcon className="w-3.5 h-3.5 absolute -top-1 -right-1 text-amber-500 bg-gray-900 rounded-full p-0.5 border border-amber-500/30" />}
         </button>
         <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 shadow-lg">
-            {label}
-            {hotkey && <span className="ml-2 text-gray-400 text-[10px] uppercase">{hotkey}</span>}
+            {locked ? (lockedMessage || 'Restricted by host') : label}
+            {!locked && hotkey && <span className="ml-2 text-gray-400 text-[10px] uppercase">{hotkey}</span>}
         </div>
     </div>
 );
@@ -174,6 +178,19 @@ const ContextMenuItem = ({ icon, label, onClick, disabled, danger, title }: any)
     </button>
 );
 
+// Permission toggle for per-guest context menu
+const PermissionToggleItem = ({ label, enabled, onChange }: { label: string; enabled: boolean; onChange: (v: boolean) => void }) => (
+    <button
+        onClick={(e) => { e.stopPropagation(); onChange(!enabled); }}
+        className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-medium transition-colors hover:bg-app-bg text-content-high"
+    >
+        <span>{label}</span>
+        <div className={`w-8 h-4 rounded-full transition-colors ${enabled ? 'bg-green-500' : 'bg-zinc-600'} relative`}>
+            <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+        </div>
+    </button>
+);
+
 const VideoFeed = ({ participant, stream, isLocal, minimal, objectFit, objectPosition, zoom = 1 }: { participant: Participant, stream: MediaStream | null, isLocal: boolean, minimal?: boolean, objectFit?: any, objectPosition?: any, zoom?: number }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -201,11 +218,11 @@ const VideoFeed = ({ participant, stream, isLocal, minimal, objectFit, objectPos
                     autoPlay
                     muted
                     playsInline
-                    className={`w-full h-full ${isLocal && participant.id !== 'screen' ? 'transform scale-x-[-1]' : ''}`}
+                    className="w-full h-full"
                     style={{
                         objectFit: objectFit || 'cover',
                         objectPosition: objectPosition || 'center',
-                        transform: `scale(${zoom})`,
+                        transform: isLocal && participant.id !== 'screen' ? `scale(${zoom}) scaleX(-1)` : `scale(${zoom})`,
                         transition: 'transform 0.1s ease-out'
                     }}
                 />
@@ -388,6 +405,38 @@ export function Studio({ config, onLeave }: StudioProps) {
     const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
     const [audioInputDevices, setAudioInputDevices] = useState<MediaDeviceInfo[]>([]);
     const [contextMenu, setContextMenu] = useState<{ x: number, y: number, participantId: string } | null>(null);
+    
+    // Sidebar collapsed states
+    const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
+    const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
+    // Guest right tab (chat placeholder)
+    const [guestRightTab, setGuestRightTab] = useState<'chat' | 'private_chat'>('chat');
+    
+    // Presentation pinning (fullscreen with PIP for participants)
+    const [pinnedPresentation, setPinnedPresentation] = useState(false);
+    const presentationZoomRef = useRef(1);
+    const zoomDisplayRef = useRef<HTMLSpanElement>(null); // For display text without rerenders
+    const presentationVideoRef = useRef<HTMLVideoElement>(null);
+    // Drag state for pinned presentation (using ref to avoid rerenders)
+    const pinnedDragRef = useRef({ isDragging: false, startX: 0, startY: 0, offsetX: 0, offsetY: 0 });
+
+    // Streaming state - modals & health
+    const [activeDestinations, setActiveDestinations] = useState<Array<{id: string; name: string; platform: string; enabled: boolean; status: 'connected'|'reconnecting'|'failed'; bitrate: number}>>([]);
+    const [showNerdMetrics, setShowNerdMetrics] = useState(false);
+    const [destToDisable, setDestToDisable] = useState<string | null>(null);
+    // Simulated subscription tier for demo (in production, fetch from auth/billing)
+    const [subscriptionTier] = useState<'free' | 'creator' | 'pro' | 'enterprise'>('pro');
+
+    // Close context menu when clicking outside
+    useEffect(() => {
+        const handleClickOutside = () => {
+            if (contextMenu) {
+                setContextMenu(null);
+            }
+        };
+        document.addEventListener('click', handleClickOutside);
+        return () => document.removeEventListener('click', handleClickOutside);
+    }, [contextMenu]);
 
     // Processed Stream State for Local Preview
     const [processedLocalStream, setProcessedLocalStream] = useState<MediaStream | null>(null);
@@ -396,11 +445,14 @@ export function Studio({ config, onLeave }: StudioProps) {
     
     // Guest Permissions (configurable by host)
     const [guestPermissions, setGuestPermissions] = useState<GuestPermissionConfig>(DEFAULT_GUEST_PERMISSIONS);
+    // Per-guest permissions (host can set different permissions for each guest)
+    const [perGuestPermissions, setPerGuestPermissions] = useState<PerGuestPermissions>({});
+    // My permissions as a guest (received from host)
+    const [myPermissions, setMyPermissions] = useState<GuestPermissionConfig>(DEFAULT_GUEST_PERMISSIONS);
     
     const handleUpdateGuestPermissions = useCallback((updates: Partial<GuestPermissionConfig>) => {
         setGuestPermissions(prev => ({ ...prev, ...updates }));
-        // TODO: Broadcast permission changes to all guests via signaling
-        console.log('[GuestPermissions] Updated:', updates);
+        console.log('[GuestPermissions] Updated global:', updates);
     }, []);
 
     // Copy invite link to clipboard - includes mode=studio so guests join the studio
@@ -414,8 +466,8 @@ export function Studio({ config, onLeave }: StudioProps) {
     }, [config.roomId]);
 
     // Memoize the error handler to prevent infinite re-renders
-    const handleAllstrmError = useCallback((err: Error) => {
-        console.error("Studio Error:", err);
+    const handleAllstrmError = useCallback((err: { code: string; message: string }) => {
+        console.error("Studio Error:", err.code, err.message);
     }, []);
 
     // Memoize initialConfig to prevent identity changes
@@ -445,7 +497,13 @@ export function Studio({ config, onLeave }: StudioProps) {
         activeRecordings, pausedRecordings, startRecording, stopRecording, pauseRecording, resumeRecording,
         updateRecordingScene, // Import the new sync function
         admitParticipant, // For green room guest admission
-        isLocalInWaitingRoom // For guest waiting room overlay
+        isLocalInWaitingRoom, // For guest waiting room overlay
+        sendDataMessage, // For host-authoritative stage sync
+        receivedStageState, // Stage state from host (for guests)
+        stageStateVersion, // Version counter to detect any stage changes
+        receivedPermissions, // Permissions from host (for guests)
+        wasKicked, // Whether guest was kicked by host
+        sessionEnded, // Whether host left and session ended
     } = useAllstrmLiveKit({
         roomId: config.roomId,
         displayName: config.displayName,
@@ -471,6 +529,82 @@ export function Studio({ config, onLeave }: StudioProps) {
             }
         });
     }, [participants, stopParticipantVideo]);
+
+    // Update permissions for a specific guest (must be after hook to access sendDataMessage)
+    const handleUpdatePerGuestPermissions = useCallback((participantId: string, updates: Partial<GuestPermissionConfig>) => {
+        const newPerms = { ...(perGuestPermissions[participantId] || DEFAULT_GUEST_PERMISSIONS), ...updates };
+        setPerGuestPermissions(prev => ({
+            ...prev,
+            [participantId]: newPerms
+        }));
+        
+        // AUTO-STOP MEDIA when permission revoked
+        if (updates.canToggleVideo === false) {
+            stopParticipantVideo(participantId);
+            console.log('[GuestPermissions] Auto-stopped video for', participantId);
+        }
+        if (updates.canToggleAudio === false) {
+            muteParticipant(participantId);
+            console.log('[GuestPermissions] Auto-muted', participantId);
+        }
+        
+        // Broadcast permission change to the specific guest via data message
+        if (sendDataMessage && isConnected) {
+            sendDataMessage({ 
+                type: 'permission', 
+                targetId: participantId,
+                permissions: newPerms
+            });
+        }
+        console.log('[GuestPermissions] Updated for', participantId, ':', updates);
+    }, [sendDataMessage, isConnected, perGuestPermissions, stopParticipantVideo, muteParticipant]);
+
+    // Guest: Sync myPermissions with receivedPermissions from host
+    // Also auto-stop local media if permission is revoked
+    const prevPermissionsRef = useRef<GuestPermissionConfig | null>(null);
+    const [permissionNotification, setPermissionNotification] = useState<string | null>(null);
+    
+    useEffect(() => {
+        if (!isHost && receivedPermissions) {
+            const newPerms = receivedPermissions as GuestPermissionConfig;
+            const prev = prevPermissionsRef.current;
+            
+            // Check if permissions were revoked (transitioned from true to false)
+            if (prev) {
+                if (prev.canToggleVideo && !newPerms.canToggleVideo) {
+                    // Video permission revoked - stop local video
+                    if (videoEnabled) {
+                        toggleVideo();
+                        setPermissionNotification('Host disabled your camera');
+                    }
+                }
+                if (prev.canToggleAudio && !newPerms.canToggleAudio) {
+                    // Audio permission revoked - mute local audio  
+                    if (audioEnabled) {
+                        toggleAudio();
+                        setPermissionNotification('Host muted your microphone');
+                    }
+                }
+                if (prev.canShareScreen && !newPerms.canShareScreen && screenStream) {
+                    // Screen share revoked
+                    stopScreenShare();
+                    setPermissionNotification('Host disabled your screen share');
+                }
+            }
+            
+            setMyPermissions(newPerms);
+            prevPermissionsRef.current = newPerms;
+            console.log('[GuestPermissions] Received permissions from host:', receivedPermissions);
+        }
+    }, [isHost, receivedPermissions, videoEnabled, audioEnabled, toggleVideo, toggleAudio, screenStream, stopScreenShare]);
+
+    // Clear permission notification after 3 seconds
+    useEffect(() => {
+        if (permissionNotification) {
+            const timer = setTimeout(() => setPermissionNotification(null), 3000);
+            return () => clearTimeout(timer);
+        }
+    }, [permissionNotification]);
 
     // ... (Recording state effects)
 
@@ -520,7 +654,7 @@ export function Studio({ config, onLeave }: StudioProps) {
                 : 'REC';
 
     // Recording Handlers
-    const startProgramRecording = () => { startRecording('mixed'); setProgRecStatus('recording'); };
+    const startProgramRecording = () => { startRecording('mixed', stageRef.current); setProgRecStatus('recording'); };
     const stopProgramRecording = () => { stopRecording('mixed'); setProgRecStatus('idle'); };
     const pauseProgramRecording = () => { pauseRecording('mixed'); setProgRecStatus('paused'); };
     const resumeProgramRecording = () => { resumeRecording('mixed'); setProgRecStatus('recording'); };
@@ -630,9 +764,11 @@ export function Studio({ config, onLeave }: StudioProps) {
         setDraggedParticipantIndex(null);
     };
 
-    // Context Menu Handlers (unchanged)
+    // Context Menu Handlers - Only hosts can use context menu on other participants
     const handleContextMenu = (e: React.MouseEvent, participantId: string) => {
         e.preventDefault();
+        // Guests can only access context menu for themselves (to toggle their own audio/video)
+        if (!isHost && participantId !== 'local') return;
         setContextMenu({ x: e.clientX, y: e.clientY, participantId });
     };
 
@@ -641,14 +777,53 @@ export function Studio({ config, onLeave }: StudioProps) {
         const { participantId } = contextMenu;
         const isLocal = participantId === 'local';
 
+        // If guest, only allow toggling own audio/video (no stage control)
+        if (!isHost && !isLocal) {
+            setContextMenu(null);
+            return;
+        }
+
+        // Get per-guest permissions for the target
+        const targetPermissions = perGuestPermissions[participantId] || guestPermissions;
+
         switch (action) {
-            case 'mute': isLocal ? handleToggleAudio() : muteParticipant(participantId); break;
-            case 'video': isLocal ? handleToggleVideo() : stopParticipantVideo(participantId); break;
-            case 'stage': handleStageToggle(participantId, !onStageParticipants.some(p => p.id === participantId)); break;
+            case 'mute': 
+                if (isLocal) {
+                    // Check if guest has permission to toggle their own audio
+                    if (!isHost && !targetPermissions.canToggleAudio) {
+                        console.log('[Permissions] Guest cannot toggle audio - disabled by host');
+                        break;
+                    }
+                    handleToggleAudio();
+                } else {
+                    muteParticipant(participantId);
+                }
+                break;
+            case 'video': 
+                if (isLocal) {
+                    // Check if guest has permission to toggle their own video
+                    if (!isHost && !targetPermissions.canToggleVideo) {
+                        console.log('[Permissions] Guest cannot toggle video - disabled by host');
+                        break;
+                    }
+                    handleToggleVideo();
+                } else {
+                    stopParticipantVideo(participantId);
+                }
+                break;
+            case 'stage': 
+                // ONLY HOST can control stage - guests cannot add/remove themselves or others
+                if (!isHost) {
+                    console.log('[Permissions] Only host can control stage');
+                    break;
+                }
+                handleStageToggle(participantId, !onStageParticipants.some(p => p.id === participantId)); 
+                break;
             case 'kick': if (!isLocal) removeParticipant(participantId); break;
             case 'fit': setViewPrefs(prev => ({ ...prev, [participantId]: { ...(prev[participantId] || { fit: 'contain', pan: { x: 50, y: 50 }, zoom: 1 }), fit: 'contain' } })); break;
             case 'fill': setViewPrefs(prev => ({ ...prev, [participantId]: { ...(prev[participantId] || { fit: 'contain', pan: { x: 50, y: 50 }, zoom: 1 }), fit: 'cover' } })); break;
             case 'stop_presenting': stopScreenShare(); break;
+            case 'pin_presentation': setPinnedPresentation(p => !p); break;
         }
         setContextMenu(null);
     };
@@ -715,6 +890,8 @@ export function Studio({ config, onLeave }: StudioProps) {
             backstage: backstageParticipants.length,
             waitingRoom: waitingRoomParticipants.length,
             onStage: onStageParticipants.length,
+            isLocalInWaitingRoom, // ADD THIS
+            configRole: config.role, // ADD THIS
             participants: participants.map(p => ({
                 id: p.id,
                 name: p.display_name,
@@ -723,7 +900,7 @@ export function Studio({ config, onLeave }: StudioProps) {
                 is_in_waiting_room: p.is_in_waiting_room
             }))
         });
-    }, [participants, backstageParticipants, waitingRoomParticipants, onStageParticipants]);
+    }, [participants, backstageParticipants, waitingRoomParticipants, onStageParticipants, isLocalInWaitingRoom, config.role]);
 
     // Add Host to stage by default when connected
     useEffect(() => {
@@ -762,6 +939,107 @@ export function Studio({ config, onLeave }: StudioProps) {
             }).filter(Boolean) as Participant[];
         });
     }, [participants]);
+
+    // HOST: Broadcast stage state to all guests when it changes
+    // NOTE: Removed duplicate - using broadcastStageState effect instead
+
+    // GUEST: Receive stage state from host and sync local view
+    // Triggered by stageStateVersion to catch empty arrays too
+    useEffect(() => {
+        // Only run for guests, and only when we've received at least one sync (version > 0)
+        if (isHost || stageStateVersion === 0) return;
+        
+        console.log('[Studio] Guest received stage sync (v' + stageStateVersion + '):', receivedStageState);
+        console.log('[Studio] Guest available participants:', participants.map(p => ({ id: p.id, name: p.display_name })));
+        console.log('[Studio] Guest available remoteStreams:', Object.keys(remoteStreams));
+        console.log('[Studio] Guest myParticipantId:', myParticipantId);
+        
+        // Handle empty stage (host removed everyone)
+        if (!receivedStageState || receivedStageState.length === 0) {
+            console.log('[Studio] Guest: Stage cleared by host');
+            setOnStageParticipants([]);
+            return;
+        }
+        
+        // Deduplicate received IDs
+        const uniqueIds = [...new Set(receivedStageState)];
+        
+        setOnStageParticipants(currentStage => {
+            // Check if local participant exists or needs to be created
+            const localOnStage = currentStage.find(p => p.id === 'local');
+            const newStage: Participant[] = [];
+            const addedIds = new Set<string>();
+            
+            // Check if guest's own ID or 'local' is in the sync list
+            const shouldGuestBeOnStage = uniqueIds.includes('local') || uniqueIds.includes(myParticipantId || '');
+            
+            if (shouldGuestBeOnStage) {
+                if (localOnStage) {
+                    // Use existing local participant
+                    newStage.push({ ...localOnStage, is_on_stage: true });
+                } else {
+                    // CREATE local participant (guest's own camera)
+                    const localP: Participant = {
+                        id: 'local',
+                        room_id: config.roomId || '',
+                        display_name: config.displayName || 'Guest',
+                        role: config.role || 'guest',
+                        ingest_type: 'webrtc',
+                        media_state: { 
+                            audio_enabled: audioEnabled, 
+                            video_enabled: videoEnabled,
+                            screen_sharing: false,
+                            connection_quality: 'excellent'
+                        },
+                        is_on_stage: true,
+                        is_in_waiting_room: false
+                    };
+                    newStage.push(localP);
+                    console.log('[Studio] Guest: Created local participant for stage');
+                }
+                addedIds.add('local');
+                addedIds.add(myParticipantId || '');
+            }
+            
+            // Add remote participants that host says are on stage
+            uniqueIds.forEach((id: string) => {
+                if (id === 'local' || id === myParticipantId || addedIds.has(id)) return;
+                
+                // Try to find in participants array first
+                let participant = participants.find(p => p.id === id);
+                
+                // If not found but we have a stream, create a placeholder participant
+                if (!participant && remoteStreams[id]) {
+                    console.log('[Studio] Guest: Creating participant for remote ID:', id);
+                    participant = {
+                        id: id,
+                        room_id: config.roomId || '',
+                        display_name: id.split('_').slice(-1)[0] || 'Participant', // Extract name from identity
+                        role: 'host', // Assume host if not found (they broadcast the sync)
+                        ingest_type: 'webrtc',
+                        media_state: { 
+                            audio_enabled: true, 
+                            video_enabled: true,
+                            screen_sharing: false,
+                            connection_quality: 'excellent'
+                        },
+                        is_on_stage: true,
+                        is_in_waiting_room: false
+                    };
+                }
+                
+                if (participant) {
+                    newStage.push({ ...participant, is_on_stage: true });
+                    addedIds.add(id);
+                } else {
+                    console.warn('[Studio] Guest: Could not find participant for ID:', id);
+                }
+            });
+            
+            console.log('[Studio] Guest updated stage:', newStage.map(p => p.id));
+            return newStage;
+        });
+    }, [isHost, stageStateVersion, receivedStageState, participants, remoteStreams, myParticipantId, config.displayName, config.role, config.roomId, audioEnabled, videoEnabled]);
 
     // ... (Standard effects for startup)
     useEffect(() => {
@@ -828,6 +1106,49 @@ export function Studio({ config, onLeave }: StudioProps) {
         setShowNoDestinationsPrompt(false);
         setIsDestinationModalOpen(true);
     };
+    
+    // Admit participant to backstage (host manually adds to stage)
+    const handleAdmitToBackstage = async (participantId: string) => {
+        console.log('[Studio] Admitting to backstage:', participantId);
+        await admitParticipant(participantId);
+        // Guest goes to backstage, not directly on stage
+        // Host can then add them to stage from GreenRoom
+    };
+    
+    // Broadcast stage state to all guests (host-authoritative)
+    const broadcastStageState = useCallback(() => {
+        if (!isHost) return;
+        // Map 'local' to actual participant ID so guests can find the host
+        const stageIds = [...new Set(onStageParticipants.map(p => 
+            p.id === 'local' ? (myParticipantId || 'local') : p.id
+        ))];
+        console.log('[Studio] Broadcasting stage state:', stageIds);
+        sendDataMessage({
+            type: 'stageSync',
+            onStageIds: stageIds,
+            timestamp: Date.now()
+        });
+    }, [isHost, onStageParticipants, sendDataMessage, myParticipantId]);
+    
+    // Broadcast stage changes whenever host updates the stage
+    useEffect(() => {
+        if (isHost && isConnected) {
+            broadcastStageState();
+        }
+    }, [isHost, isConnected, onStageParticipants, broadcastStageState]);
+    
+    // Re-broadcast stage state when new participants join (so they get current state)
+    useEffect(() => {
+        if (isHost && isConnected && participants.length > 0) {
+            // Debounce slightly to avoid rapid re-broadcasts
+            const timer = setTimeout(() => {
+                console.log('[Studio] Re-broadcasting stage state for new participants');
+                broadcastStageState();
+            }, 500);
+            return () => clearTimeout(timer);
+        }
+    }, [isHost, isConnected, participants.length, broadcastStageState]);
+    
     const handleStageToggle = (participantId: string, isOnStage: boolean) => {
         if (isOnStage && onStageParticipants.length >= MAX_STAGE_PARTICIPANTS) { alert(`Stage is full.`); return; }
         if (participantId === 'local') {
@@ -839,7 +1160,15 @@ export function Studio({ config, onLeave }: StudioProps) {
         } else {
             toggleStageStatus(participantId, isOnStage);
             setOnStageParticipants(prev => {
-                if (isOnStage) { const participant = participants.find(p => p.id === participantId); return participant ? [...prev, { ...participant, is_on_stage: true }] : prev; }
+                if (isOnStage) { 
+                    // Check for duplicates before adding
+                    if (prev.some(p => p.id === participantId)) {
+                        console.log('[Studio] Participant already on stage, skipping duplicate:', participantId);
+                        return prev;
+                    }
+                    const participant = participants.find(p => p.id === participantId); 
+                    return participant ? [...prev, { ...participant, is_on_stage: true }] : prev; 
+                }
                 return prev.filter(p => p.id !== participantId);
             });
         }
@@ -884,8 +1213,12 @@ export function Studio({ config, onLeave }: StudioProps) {
 
     const isLocalOnStage = onStageParticipants.some(p => p.id === 'local');
 
+    // DEBUG: Log waiting room state at render
+    console.log('[Studio] Render check - isLocalInWaitingRoom:', isLocalInWaitingRoom, 'role:', config.role);
+    
     // Show waiting room overlay for guests who haven't been admitted yet
     if (isLocalInWaitingRoom) {
+        console.log('[Studio] Rendering waiting room overlay');
         return (
             <div className="flex h-screen w-full items-center justify-center bg-app-bg text-content-high p-6">
                 <div className="max-w-md text-center animate-fade-in">
@@ -900,15 +1233,22 @@ export function Studio({ config, onLeave }: StudioProps) {
                     </div>
                     {localStream && (
                         <div className="mt-8 rounded-xl overflow-hidden border border-app-border shadow-lg max-w-xs mx-auto">
-                            <video
-                                ref={(el) => { if (el && localStream) el.srcObject = localStream; }}
-                                autoPlay
-                                playsInline
-                                muted
-                                className="w-full aspect-video object-cover bg-black"
-                            />
+                            {(!isHost && !myPermissions.canToggleVideo) ? (
+                                <div className="w-full aspect-video bg-app-surface-dark flex flex-col items-center justify-center">
+                                    <VideoOff className="w-12 h-12 text-content-low mb-2" />
+                                    <span className="text-sm text-content-low">Video disabled by host</span>
+                                </div>
+                            ) : (
+                                <video
+                                    ref={(el) => { if (el && localStream) el.srcObject = localStream; }}
+                                    autoPlay
+                                    playsInline
+                                    muted
+                                    className="w-full aspect-video object-cover bg-black"
+                                />
+                            )}
                             <div className="bg-app-surface px-4 py-2 text-sm text-content-medium">
-                                Preview - your camera is ready
+                                {(!isHost && !myPermissions.canToggleVideo) ? 'Your camera is disabled' : 'Preview - your camera is ready'}
                             </div>
                         </div>
                     )}
@@ -921,16 +1261,33 @@ export function Studio({ config, onLeave }: StudioProps) {
         <div className="flex h-screen bg-app-bg text-content-high font-sans overflow-hidden" onMouseUp={handleCropMouseUp}>
             {/* ... (Left Sidebar Unchanged) */}
             {isHost && (
-                <div className="w-64 bg-app-surface/30 backdrop-blur-md border-r border-app-border flex flex-col z-20 shadow-sm relative">
-                    <div className="flex-1 flex flex-col min-h-0">
-                        <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
-                            <div className="p-2 text-[10px] font-bold text-content-low uppercase tracking-widest sticky top-0 bg-app-surface/90 backdrop-blur z-10">Run of Show</div>
-                            <div className="space-y-2">{scenes.map((scene) => <SceneCard key={scene.id} title={scene.name} type="layout" isActive={activeSceneId === scene.id} onClick={() => loadScene(scene)} participants={scene.participants} />)}</div>
+                <div className={`${leftSidebarCollapsed ? 'w-12' : 'w-64'} bg-app-surface/30 backdrop-blur-md border-r border-app-border flex flex-col z-20 shadow-sm relative transition-all duration-300`}>
+                    {/* Collapse toggle button */}
+                    <button 
+                        className="absolute -right-3 top-4 w-6 h-6 bg-app-surface border border-app-border rounded-full flex items-center justify-center z-30 hover:bg-app-bg transition-colors"
+                        onClick={() => setLeftSidebarCollapsed(!leftSidebarCollapsed)}
+                    >
+                        {leftSidebarCollapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronLeft className="w-3 h-3" />}
+                    </button>
+                    {!leftSidebarCollapsed ? (
+                        <>
+                            <div className="flex-1 flex flex-col min-h-0">
+                                <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
+                                    <div className="p-2 text-[10px] font-bold text-content-low uppercase tracking-widest sticky top-0 bg-app-surface/90 backdrop-blur z-10">Run of Show</div>
+                                    <div className="space-y-2">{scenes.map((scene) => <SceneCard key={scene.id} title={scene.name} type="layout" isActive={activeSceneId === scene.id} onClick={() => loadScene(scene)} participants={scene.participants} />)}</div>
+                                </div>
+                            </div>
+                            <div className="p-3 border-t border-app-border bg-app-surface/50">
+                                <button className="w-full py-2 bg-app-bg border border-app-border rounded text-[10px] font-bold text-content-medium hover:text-content-high hover:border-content-medium transition-all flex items-center justify-center gap-2"><RefreshCw className="w-3 h-3" />RESET LAYOUT</button>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="flex flex-col items-center py-4 gap-2">
+                            <div className="w-8 h-8 rounded bg-app-bg border border-app-border flex items-center justify-center" title="Run of Show">
+                                <Layers className="w-4 h-4 text-content-medium" />
+                            </div>
                         </div>
-                    </div>
-                    <div className="p-3 border-t border-app-border bg-app-surface/50">
-                        <button className="w-full py-2 bg-app-bg border border-app-border rounded text-[10px] font-bold text-content-medium hover:text-content-high hover:border-content-medium transition-all flex items-center justify-center gap-2"><RefreshCw className="w-3 h-3" />RESET LAYOUT</button>
-                    </div>
+                    )}
                 </div>
             )}
 
@@ -971,51 +1328,209 @@ export function Studio({ config, onLeave }: StudioProps) {
                                             <p className="text-[9px] text-content-low mt-1.5">Records each participant separately for post-production</p>
                                         </div>
                                         
-                                        {/* Recording Destination Toggle */}
-                                        <div className="p-3">
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <HardDrive className="w-4 h-4 text-emerald-500" />
-                                                <span className="text-xs font-bold text-content-high">SAVE TO</span>
-                                            </div>
-                                            <div className="flex gap-1">
-                                                <button 
-                                                    className={`flex-1 px-2 py-1.5 rounded text-[10px] font-bold transition-colors ${recordingDestination === 'local' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-app-bg border border-app-border text-content-medium hover:border-content-low'}`}
-                                                    onClick={() => setRecordingDestination('local')}
-                                                >
-                                                    Local
-                                                </button>
-                                                <button 
-                                                    className={`flex-1 px-2 py-1.5 rounded text-[10px] font-bold transition-colors ${recordingDestination === 'cloud' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-app-bg border border-app-border text-content-medium hover:border-content-low'}`}
-                                                    onClick={() => setRecordingDestination('cloud')}
-                                                >
-                                                    Cloud
-                                                </button>
-                                                <button 
-                                                    className={`flex-1 px-2 py-1.5 rounded text-[10px] font-bold transition-colors ${recordingDestination === 'both' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-app-bg border border-app-border text-content-medium hover:border-content-low'}`}
-                                                    onClick={() => setRecordingDestination('both')}
-                                                >
-                                                    Both
-                                                </button>
-                                            </div>
-                                        </div>
+
                                     </div>
                                 )}
                             </div>
                             <div className="h-6 w-px bg-app-border mx-2" />
                             <Button variant="secondary" size="sm" onClick={() => setIsDestinationModalOpen(true)}>Destinations</Button>
                             <Button variant={broadcastStatus === 'live' ? 'danger' : 'primary'} size="sm" onClick={handleBroadcastToggle} className={broadcastStatus === 'live' ? 'bg-red-600' : 'bg-indigo-600'}>{broadcastStatus === 'live' ? 'End Broadcast' : 'Go Live'}</Button>
+                            
+                            {/* Stream Health Panel - Creator+ tier */}
+                            {(subscriptionTier === 'creator' || subscriptionTier === 'pro' || subscriptionTier === 'enterprise') && broadcastStatus === 'live' && (
+                                <div className="flex items-center gap-2 ml-2 px-3 py-1.5 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
+                                    <Activity className="w-4 h-4 text-emerald-400 animate-pulse" />
+                                    <span className="text-xs text-emerald-400 font-semibold">LIVE</span>
+                                    {activeDestinations.map(dest => (
+                                        <div key={dest.id} className="flex items-center gap-1.5 ml-2 px-2 py-0.5 bg-app-surface/40 rounded" title={`${dest.name}: ${dest.bitrate} kbps`}>
+                                            <span className={`w-2 h-2 rounded-full ${dest.status === 'connected' ? 'bg-emerald-500' : dest.status === 'reconnecting' ? 'bg-amber-400 animate-pulse' : 'bg-red-500'}`} />
+                                            <span className="text-xs text-content-med">{dest.platform}</span>
+                                            <button 
+                                                onClick={() => setDestToDisable(dest.id)} 
+                                                className="opacity-60 hover:opacity-100 ml-0.5 p-0.5 hover:bg-red-500/20 rounded"
+                                                title="Stop streaming to this destination"
+                                            >
+                                                <X className="w-3 h-3" />
+                                            </button>
+                                        </div>
+                                    ))}
+                                    {(subscriptionTier === 'pro' || subscriptionTier === 'enterprise') && (
+                                        <button 
+                                            onClick={() => setShowNerdMetrics(true)} 
+                                            className="ml-1 px-2 py-0.5 text-xs bg-app-surface/50 rounded hover:bg-app-surface/80 text-content-low hover:text-content-med flex items-center gap-1"
+                                            title="View detailed streaming metrics"
+                                        >
+                                            <BarChart3 className="w-3 h-3" />
+                                            Stats
+                                        </button>
+                                    )}
+                                </div>
+                            )}
                         </div>
-                    ) : (<div>Guest View</div>)}
+                    ) : (
+                        <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2 px-3 py-1.5 bg-app-bg border border-app-border rounded-lg">
+                                <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                                <span className="text-xs font-medium text-content-medium">Connected as Guest</span>
+                            </div>
+                        </div>
+                    )}
                 </header>
 
                 <div className="flex-1 flex flex-col p-4 overflow-y-auto items-center">
+                    {/* Permission Notification for Guests */}
+                    {permissionNotification && (
+                        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 animate-slide-in">
+                            <div className="flex items-center gap-3 px-4 py-3 bg-amber-500/90 text-black rounded-lg shadow-lg backdrop-blur-sm border border-amber-400">
+                                <Lock className="w-5 h-5" />
+                                <span className="font-medium text-sm">{permissionNotification}</span>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Kick Overlay - shown when guest is removed by host */}
+                    {wasKicked && (
+                        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center">
+                            <div className="bg-app-surface border border-red-500/30 rounded-2xl p-8 max-w-md mx-4 text-center shadow-2xl">
+                                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-500/10 flex items-center justify-center border border-red-500/30">
+                                    <UserMinus className="w-8 h-8 text-red-500" />
+                                </div>
+                                <h2 className="text-2xl font-bold text-white mb-2">You've Been Removed</h2>
+                                <p className="text-content-medium mb-6">The host has removed you from this session.</p>
+                                <button
+                                    onClick={onLeave}
+                                    className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg transition-colors"
+                                >
+                                    Back to Dashboard
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Session Ended Overlay - shown when host leaves */}
+                    {sessionEnded && !wasKicked && (
+                        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center">
+                            <div className="bg-app-surface border border-amber-500/30 rounded-2xl p-8 max-w-md mx-4 text-center shadow-2xl">
+                                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-amber-500/10 flex items-center justify-center border border-amber-500/30">
+                                    <LogOut className="w-8 h-8 text-amber-500" />
+                                </div>
+                                <h2 className="text-2xl font-bold text-white mb-2">Session Ended</h2>
+                                <p className="text-content-medium mb-6">The host has ended this session. Thank you for joining!</p>
+                                <button
+                                    onClick={onLeave}
+                                    className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg transition-colors"
+                                >
+                                    Back to Dashboard
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                    
                     {/* Unified Stage Rendering */}
                     <div className="w-full max-w-5xl aspect-video rounded-lg shadow-2xl relative overflow-hidden group border border-app-border transition-colors duration-500" ref={stageRef} style={{ backgroundColor: stageBackground }}>
                         {/* 
                             This is the core change: Rendering DOM elements using absolutely positioned items 
                             derived from the Shared Layout Engine 'unifiedScene', instead of CSS Grid.
                         */}
-                        {unifiedScene.items.length === 0 && <div className="absolute inset-0 text-white/30 flex flex-col items-center justify-center"><Monitor className="w-16 h-16 mb-4 opacity-50" /><p className="text-lg font-medium">Add to stage</p></div>}
+                        
+                        {/* PINNED PRESENTATION MODE - Fullscreen with PIP */}
+                        {pinnedPresentation && screenStream ? (
+                            <>
+                                {/* Fullscreen Presentation - Draggable */}
+                                <div 
+                                    className="absolute inset-0 bg-black overflow-hidden cursor-grab active:cursor-grabbing"
+                                    onMouseDown={(e) => {
+                                        if (e.button !== 0) return;
+                                        const d = pinnedDragRef.current;
+                                        pinnedDragRef.current = { isDragging: true, startX: e.clientX, startY: e.clientY, offsetX: d.offsetX, offsetY: d.offsetY };
+                                    }}
+                                    onMouseMove={(e) => {
+                                        const d = pinnedDragRef.current;
+                                        if (!d.isDragging) return;
+                                        const dx = e.clientX - d.startX;
+                                        const dy = e.clientY - d.startY;
+                                        if (presentationVideoRef.current) {
+                                            presentationVideoRef.current.style.transform = `scale(${presentationZoomRef.current}) translate(${(d.offsetX + dx) / presentationZoomRef.current}px, ${(d.offsetY + dy) / presentationZoomRef.current}px)`;
+                                        }
+                                    }}
+                                    onMouseUp={(e) => {
+                                        const d = pinnedDragRef.current;
+                                        if (!d.isDragging) return;
+                                        const dx = e.clientX - d.startX;
+                                        const dy = e.clientY - d.startY;
+                                        pinnedDragRef.current = { isDragging: false, startX: 0, startY: 0, offsetX: d.offsetX + dx, offsetY: d.offsetY + dy };
+                                    }}
+                                    onMouseLeave={() => {
+                                        if (pinnedDragRef.current.isDragging) {
+                                            pinnedDragRef.current.isDragging = false;
+                                        }
+                                    }}
+                                >
+                                    <video 
+                                        ref={(el) => { 
+                                            presentationVideoRef.current = el;
+                                            if (el && screenStream) el.srcObject = screenStream; 
+                                        }}
+                                        autoPlay muted playsInline
+                                        className="w-full h-full"
+                                        style={{ 
+                                            objectFit: 'contain',
+                                            transform: `scale(${presentationZoomRef.current}) translate(${pinnedDragRef.current.offsetX / presentationZoomRef.current}px, ${pinnedDragRef.current.offsetY / presentationZoomRef.current}px)`,
+                                            transformOrigin: 'center center',
+                                            pointerEvents: 'none'
+                                        }}
+                                        onContextMenu={(e) => handleContextMenu(e, 'screen')}
+                                    />
+                                </div>
+                                {/* Zoom Controls */}
+                                <div className="absolute top-3 right-3 z-30 flex items-center gap-2 bg-black/70 backdrop-blur-md rounded-lg p-2 border border-white/10">
+                                    <button className="p-1.5 hover:bg-white/20 rounded text-white" onClick={() => {
+                                        presentationZoomRef.current = Math.max(presentationZoomRef.current - 0.1, 0.5);
+                                        const d = pinnedDragRef.current;
+                                        if (presentationVideoRef.current) {
+                                            presentationVideoRef.current.style.transform = `scale(${presentationZoomRef.current}) translate(${d.offsetX / presentationZoomRef.current}px, ${d.offsetY / presentationZoomRef.current}px)`;
+                                        }
+                                        if (zoomDisplayRef.current) zoomDisplayRef.current.textContent = `${Math.round(presentationZoomRef.current * 100)}%`;
+                                    }}><Minus className="w-4 h-4" /></button>
+                                    <span ref={zoomDisplayRef} className="text-xs font-mono text-white min-w-[45px] text-center">100%</span>
+                                    <button className="p-1.5 hover:bg-white/20 rounded text-white" onClick={() => {
+                                        presentationZoomRef.current = Math.min(presentationZoomRef.current + 0.1, 3);
+                                        const d = pinnedDragRef.current;
+                                        if (presentationVideoRef.current) {
+                                            presentationVideoRef.current.style.transform = `scale(${presentationZoomRef.current}) translate(${d.offsetX / presentationZoomRef.current}px, ${d.offsetY / presentationZoomRef.current}px)`;
+                                        }
+                                        if (zoomDisplayRef.current) zoomDisplayRef.current.textContent = `${Math.round(presentationZoomRef.current * 100)}%`;
+                                    }}><PlusIcon className="w-4 h-4" /></button>
+                                    <button className="p-1 hover:bg-white/20 rounded text-white" onClick={() => {
+                                        presentationZoomRef.current = 1;
+                                        pinnedDragRef.current = { isDragging: false, startX: 0, startY: 0, offsetX: 0, offsetY: 0 };
+                                        if (presentationVideoRef.current) {
+                                            presentationVideoRef.current.style.transform = 'scale(1) translate(0px, 0px)';
+                                        }
+                                        if (zoomDisplayRef.current) zoomDisplayRef.current.textContent = '100%';
+                                    }} title="Reset"><RotateCcw className="w-3.5 h-3.5" /></button>
+                                    <div className="w-px h-4 bg-white/20 mx-1" />
+                                    <button className="p-1.5 hover:bg-white/20 rounded text-white" onClick={() => setPinnedPresentation(false)} title="Unpin"><X className="w-4 h-4" /></button>
+                                </div>
+                                {/* PIP Overlay for Participants */}
+                                <div className="absolute bottom-3 right-3 z-20 flex gap-2">
+                                    {onStageParticipants.filter(p => p.id !== 'screen').map(p => {
+                                        const pipStream = p.id === 'local' ? (processedLocalStream || localStream) : remoteStreams[p.id];
+                                        return (
+                                            <div key={p.id} className="w-32 aspect-video rounded-lg overflow-hidden shadow-xl border-2 border-white/20 bg-black relative">
+                                                <VideoFeed participant={p} stream={pipStream} isLocal={p.id === 'local'} objectFit="cover" />
+                                                {activeBrand.config.showDisplayNames && (
+                                                    <div className="absolute bottom-1 left-1 z-10 px-1.5 py-0.5 rounded text-[10px] font-bold backdrop-blur-sm bg-indigo-600/80 text-white">{p.display_name}</div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                {/* NORMAL MODE - Layout Engine Rendering */}
+                                {unifiedScene.items.length === 0 && <div className="absolute inset-0 text-white/30 flex flex-col items-center justify-center"><Monitor className="w-16 h-16 mb-4 opacity-50" /><p className="text-lg font-medium">Add to stage</p></div>}
 
                         {unifiedScene.items.map((item, idx) => {
                             const p = onStageParticipants.find(x => x.id === item.id)
@@ -1082,6 +1597,8 @@ export function Studio({ config, onLeave }: StudioProps) {
                                 </div>
                             );
                         })}
+                            </>
+                        )}
 
                         {/* Banners/Overlays */}
                         {banners.filter(b => b.isVisible).map((b, idx) => {
@@ -1180,20 +1697,39 @@ export function Studio({ config, onLeave }: StudioProps) {
                         />
                     </div>
 
-                    <div className="mt-4 flex items-center gap-2">
-                        <LayoutButton icon={<Square className="w-4 h-4" />} active={layoutState?.preset_name === 'single'} onClick={() => setPresetLayout('single')} lockedMessage={layoutLocked ? "Layout Locked" : undefined} disabled={layoutLocked} />
-                        <LayoutButton icon={<Grid className="w-4 h-4" />} active={layoutState?.preset_name === 'grid'} onClick={() => setPresetLayout('grid')} lockedMessage={layoutLocked ? "Layout Locked" : undefined} disabled={layoutLocked} />
-                        <LayoutButton icon={<MonitorUp className="w-4 h-4" />} active={layoutState?.preset_name === 'pip'} onClick={() => setPresetLayout('pip')} lockedMessage={layoutLocked ? "Layout Locked" : undefined} disabled={layoutLocked} />
-                        <div className="h-4 w-px bg-app-border mx-2" />
-                        <button onClick={() => setLayoutLocked(!layoutLocked)} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${layoutLocked ? 'bg-amber-500/10 text-amber-500 border border-amber-500/50' : 'bg-app-bg border border-app-border text-content-medium hover:text-content-high'}`}>{layoutLocked ? <LockIcon className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}{layoutLocked ? 'Locked' : 'Lock'}</button>
-                    </div>
+                    {/* Layout Controls - Host only */}
+                    {isHost && (
+                        <div className="mt-4 flex items-center gap-2">
+                            <LayoutButton icon={<Square className="w-4 h-4" />} active={layoutState?.preset_name === 'single'} onClick={() => setPresetLayout('single')} lockedMessage={layoutLocked ? "Layout Locked" : undefined} disabled={layoutLocked} />
+                            <LayoutButton icon={<Grid className="w-4 h-4" />} active={layoutState?.preset_name === 'grid'} onClick={() => setPresetLayout('grid')} lockedMessage={layoutLocked ? "Layout Locked" : undefined} disabled={layoutLocked} />
+                            <LayoutButton icon={<MonitorUp className="w-4 h-4" />} active={layoutState?.preset_name === 'pip'} onClick={() => setPresetLayout('pip')} lockedMessage={layoutLocked ? "Layout Locked" : undefined} disabled={layoutLocked} />
+                            <div className="h-4 w-px bg-app-border mx-2" />
+                            <button onClick={() => setLayoutLocked(!layoutLocked)} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${layoutLocked ? 'bg-amber-500/10 text-amber-500 border border-amber-500/50' : 'bg-app-bg border border-app-border text-content-medium hover:text-content-high'}`}>{layoutLocked ? <LockIcon className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}{layoutLocked ? 'Locked' : 'Lock'}</button>
+                        </div>
+                    )}
                 </div>
 
                 <div className="h-16 bg-app-surface border-t border-app-border flex items-center px-6 justify-between shrink-0 z-30">
                     <div className="w-40" />
                     <div className="flex items-center gap-3">
-                        <ControlBtn icon={audioEnabled ? <Mic /> : <MicOff />} label={audioEnabled ? "Mute" : "Unmute"} isActiveState={audioEnabled} onClick={handleToggleAudio} hotkey="Ctrl+D" />
-                        <ControlBtn icon={videoEnabled ? <Video /> : <VideoOff />} label={videoEnabled ? "Stop Cam" : "Start Cam"} isActiveState={videoEnabled} onClick={handleToggleVideo} hotkey="Ctrl+E" />
+                        <ControlBtn 
+                            icon={audioEnabled ? <Mic /> : <MicOff />} 
+                            label={audioEnabled ? "Mute" : "Unmute"} 
+                            isActiveState={audioEnabled} 
+                            onClick={handleToggleAudio} 
+                            hotkey="Ctrl+D"
+                            locked={!isHost && !myPermissions.canToggleAudio}
+                            lockedMessage="Audio restricted by host"
+                        />
+                        <ControlBtn 
+                            icon={videoEnabled ? <Video /> : <VideoOff />} 
+                            label={videoEnabled ? "Stop Cam" : "Start Cam"} 
+                            isActiveState={videoEnabled} 
+                            onClick={handleToggleVideo} 
+                            hotkey="Ctrl+E"
+                            locked={!isHost && !myPermissions.canToggleVideo}
+                            lockedMessage="Camera restricted by host"
+                        />
 
                         <div className="relative group">
                             <ControlBtn
@@ -1226,36 +1762,107 @@ export function Studio({ config, onLeave }: StudioProps) {
                 </div>
             </div>
 
-            {/* Context Menu (Unchanged) */}
+            {/* Context Menu - Permission-based */}
             {contextMenu && (
-                <div className="fixed z-50 bg-app-surface border border-app-border rounded-lg shadow-2xl py-1 w-48 animate-scale-in origin-top-left overflow-hidden" style={{ left: contextMenu.x, top: contextMenu.y }} onContextMenu={(e) => e.preventDefault()}>
+                <div className="fixed z-50 bg-app-surface border border-app-border rounded-lg shadow-2xl py-1 w-56 animate-scale-in origin-top-left overflow-hidden" style={{ left: contextMenu.x, top: contextMenu.y }} onContextMenu={(e) => e.preventDefault()}>
                     {isTargetPresentation ? (
                         <>
                             <div className="px-3 py-1.5 text-[10px] font-bold text-content-low uppercase tracking-wider border-b border-app-border/50 mb-1 bg-app-bg/50">Presentation Control</div>
                             <ContextMenuItem icon={<StopIcon />} label="Stop Presenting" danger onClick={() => handleContextAction('stop_presenting')} />
                             <div className="h-px bg-app-border/50 my-1" />
+                            <ContextMenuItem icon={pinnedPresentation ? <X /> : <Maximize />} label={pinnedPresentation ? "Unpin Fullscreen" : "Pin Fullscreen"} onClick={() => handleContextAction('pin_presentation')} />
                             <ContextMenuItem icon={<Minimize />} label="Fit to Screen" onClick={() => handleContextAction('fit')} />
                             <ContextMenuItem icon={<Maximize />} label="Fill Frame" onClick={() => handleContextAction('fill')} />
                         </>
                     ) : (
                         <>
-                            <div className="px-3 py-1.5 text-[10px] font-bold text-content-low uppercase tracking-wider border-b border-app-border/50 mb-1 bg-app-bg/50">Manage Guest</div>
-                            <ContextMenuItem icon={isTargetLocal || contextMenu.participantId === 'local' ? (audioEnabled ? <Mic /> : <MicOff />) : (contextTarget?.media_state.audio_enabled ? <Mic /> : <MicOff />)} label={isTargetLocal ? (audioEnabled ? "Mute" : "Unmute") : (contextTarget?.media_state.audio_enabled ? "Mute Participant" : "Unmute Participant")} onClick={() => handleContextAction('mute')} />
-                            <ContextMenuItem icon={isTargetLocal || contextMenu.participantId === 'local' ? (videoEnabled ? <Video /> : <VideoOff />) : (contextTarget?.media_state.video_enabled ? <Video /> : <VideoOff />)} label={isTargetLocal ? (videoEnabled ? "Stop Cam" : "Start Cam") : (contextTarget?.media_state.video_enabled ? "Stop Video" : "Start Video")} onClick={() => handleContextAction('video')} />
-                            <ContextMenuItem icon={isTargetOnStage ? <UserMinus /> : <UserPlus />} label={isTargetOnStage ? "Remove from Stage" : "Add to Stage"} onClick={() => handleContextAction('stage')} />
+                            <div className="px-3 py-1.5 text-[10px] font-bold text-content-low uppercase tracking-wider border-b border-app-border/50 mb-1 bg-app-bg/50">
+                                {isTargetLocal ? 'My Controls' : 'Manage Guest'}
+                            </div>
+                            
+                            {/* Audio Toggle - Permission-based for guests */}
+                            {(isHost || (isTargetLocal && myPermissions.canToggleAudio)) && (
+                                <ContextMenuItem 
+                                    icon={isTargetLocal || contextMenu.participantId === 'local' ? (audioEnabled ? <Mic /> : <MicOff />) : (contextTarget?.media_state.audio_enabled ? <Mic /> : <MicOff />)} 
+                                    label={isTargetLocal ? (audioEnabled ? "Mute" : "Unmute") : (contextTarget?.media_state.audio_enabled ? "Mute Participant" : "Unmute Participant")} 
+                                    onClick={() => handleContextAction('mute')} 
+                                />
+                            )}
+                            
+                            {/* Video Toggle - Permission-based for guests */}
+                            {(isHost || (isTargetLocal && myPermissions.canToggleVideo)) && (
+                                <ContextMenuItem 
+                                    icon={isTargetLocal || contextMenu.participantId === 'local' ? (videoEnabled ? <Video /> : <VideoOff />) : (contextTarget?.media_state.video_enabled ? <Video /> : <VideoOff />)} 
+                                    label={isTargetLocal ? (videoEnabled ? "Stop Cam" : "Start Cam") : (contextTarget?.media_state.video_enabled ? "Stop Video" : "Start Video")} 
+                                    onClick={() => handleContextAction('video')} 
+                                />
+                            )}
+                            
+                            {/* Stage Control - HOST ONLY */}
+                            {isHost && (
+                                <ContextMenuItem 
+                                    icon={isTargetOnStage ? <UserMinus /> : <UserPlus />} 
+                                    label={isTargetOnStage ? "Remove from Stage" : "Add to Stage"} 
+                                    onClick={() => handleContextAction('stage')} 
+                                />
+                            )}
 
                             <div className="px-3 py-1.5 text-[10px] font-bold text-content-low uppercase tracking-wider border-b border-app-border/50 border-t mt-1 mb-1 bg-app-bg/50">View Mode</div>
                             <ContextMenuItem icon={<Minimize />} label="Fit to Screen" onClick={() => handleContextAction('fit')} />
                             <ContextMenuItem icon={<Maximize />} label="Fill Frame" onClick={() => handleContextAction('fill')} />
 
-                            {!isTargetLocal && (<><div className="h-px bg-app-border/50 my-1" /><ContextMenuItem icon={<Trash2 />} label="Kick Guest" danger onClick={() => handleContextAction('kick')} /></>)}
+                            {/* Per-Guest Permissions - HOST ONLY, for remote participants */}
+                            {isHost && !isTargetLocal && contextMenu.participantId && (
+                                <>
+                                    <div className="px-3 py-1.5 text-[10px] font-bold text-content-low uppercase tracking-wider border-b border-app-border/50 border-t mt-1 mb-1 bg-app-bg/50">
+                                        Guest Permissions
+                                    </div>
+                                    <PermissionToggleItem 
+                                        label="Can Toggle Audio" 
+                                        enabled={(perGuestPermissions[contextMenu.participantId] || guestPermissions).canToggleAudio}
+                                        onChange={(v) => handleUpdatePerGuestPermissions(contextMenu.participantId, { canToggleAudio: v })}
+                                    />
+                                    <PermissionToggleItem 
+                                        label="Can Toggle Video" 
+                                        enabled={(perGuestPermissions[contextMenu.participantId] || guestPermissions).canToggleVideo}
+                                        onChange={(v) => handleUpdatePerGuestPermissions(contextMenu.participantId, { canToggleVideo: v })}
+                                    />
+                                    <PermissionToggleItem 
+                                        label="Can Share Screen" 
+                                        enabled={(perGuestPermissions[contextMenu.participantId] || guestPermissions).canShareScreen}
+                                        onChange={(v) => handleUpdatePerGuestPermissions(contextMenu.participantId, { canShareScreen: v })}
+                                    />
+                                    <PermissionToggleItem 
+                                        label="Can Send Chat" 
+                                        enabled={(perGuestPermissions[contextMenu.participantId] || guestPermissions).canSendChat}
+                                        onChange={(v) => handleUpdatePerGuestPermissions(contextMenu.participantId, { canSendChat: v })}
+                                    />
+                                </>
+                            )}
+
+                            {/* Kick - HOST ONLY, for remote participants */}
+                            {isHost && !isTargetLocal && (
+                                <>
+                                    <div className="h-px bg-app-border/50 my-1" />
+                                    <ContextMenuItem icon={<Trash2 />} label="Kick Guest" danger onClick={() => handleContextAction('kick')} />
+                                </>
+                            )}
                         </>
                     )}
                 </div>
             )}
 
-            {isHost && (
-                <div className="w-80 bg-app-surface border-l border-app-border flex flex-col z-20 shadow-sm transition-all duration-300">
+            {/* Host Right Sidebar - Collapsible */}
+            {isHost && !rightSidebarCollapsed && (
+                <div className="w-80 bg-app-surface border-l border-app-border flex flex-col z-20 shadow-sm transition-all duration-300 relative">
+                    {/* Collapse toggle button */}
+                    <button 
+                        className="absolute -left-3 top-4 w-6 h-6 bg-app-surface border border-app-border rounded-full flex items-center justify-center z-30 hover:bg-app-bg transition-colors"
+                        onClick={() => setRightSidebarCollapsed(true)}
+                    >
+                        <ChevronRight className="w-3 h-3" />
+                    </button>
+                    
                     {/* Brand Panel - New enterprise-grade component */}
                     {activeRightTab === 'brand' && (
                         <BrandingPanel
@@ -1285,12 +1892,14 @@ export function Studio({ config, onLeave }: StudioProps) {
                                 waitingParticipants={waitingRoomParticipants}
                                 localParticipantId={myParticipantId || 'local'}
                                 localStream={processedLocalStream || localStream}
+                                remoteStreams={remoteStreams}
                                 onToggleAudio={handleToggleAudio}
                                 onToggleVideo={handleToggleVideo}
                                 onAddToStage={(id) => handleStageToggle(id, true)}
-                                onAdmitParticipant={admitParticipant}
+                                onAdmitParticipant={handleAdmitToBackstage}
                                 onContextMenu={handleContextMenu}
                                 isLocalOnStage={isLocalOnStage}
+                                isHost={isHost}
                             />
                         </div>
                     )}
@@ -1334,7 +1943,7 @@ export function Studio({ config, onLeave }: StudioProps) {
                                     // Would reconnect to the destination
                                 }}
                                 onToggle={(id, enabled) => {
-                                    toggleDestination(id);
+                                    toggleDestination(id, enabled);
                                 }}
                                 onHotSwitch={(fromId, toId) => {
                                     console.log('[StreamHealth] Hot switch:', fromId, '->', toId);
@@ -1360,16 +1969,104 @@ export function Studio({ config, onLeave }: StudioProps) {
                 </div>
             )}
 
+            {/* Host Tab Rail - Always visible */}
             {isHost && (
-                <div className="w-16 bg-app-surface border-l border-app-border flex flex-col items-center py-4 z-20 gap-4 shrink-0">
-                    <RailTab icon={<Palette />} label="Brand" active={activeRightTab === 'brand'} onClick={() => setActiveRightTab('brand')} />
-                    <RailTab icon={<Layers />} label="Overlays" active={activeRightTab === 'banners'} onClick={() => setActiveRightTab('banners')} />
-                    <RailTab icon={<UserCheck />} label="Green Room" active={activeRightTab === 'backstage'} onClick={() => setActiveRightTab('backstage')} />
-                    <RailTab icon={<FileVideo />} label="Recording" active={activeRightTab === 'recording'} onClick={() => setActiveRightTab('recording')} />
-                    <RailTab icon={<Sliders />} label="Mixer" active={activeRightTab === 'mixer'} onClick={() => setActiveRightTab('mixer')} />
-                    <RailTab icon={<Users />} label="Private" active={activeRightTab === 'private_chat'} onClick={() => setActiveRightTab('private_chat')} />
-                    <RailTab icon={<Activity />} label="Health" active={activeRightTab === 'stream_health'} onClick={() => setActiveRightTab('stream_health')} />
-                    <RailTab icon={<Shield />} label="Guests" active={activeRightTab === 'guests'} onClick={() => setActiveRightTab('guests')} />
+                <div className="w-16 bg-app-surface border-l border-app-border flex flex-col items-center py-4 z-20 gap-4 shrink-0 relative">
+                    {/* Expand button when collapsed */}
+                    {rightSidebarCollapsed && (
+                        <button 
+                            className="absolute -left-3 top-4 w-6 h-6 bg-app-surface border border-app-border rounded-full flex items-center justify-center z-30 hover:bg-app-bg transition-colors"
+                            onClick={() => setRightSidebarCollapsed(false)}
+                        >
+                            <ChevronLeft className="w-3 h-3" />
+                        </button>
+                    )}
+                    <RailTab icon={<Palette />} label="Brand" active={activeRightTab === 'brand'} onClick={() => { setActiveRightTab('brand'); setRightSidebarCollapsed(false); }} />
+                    <RailTab icon={<Layers />} label="Overlays" active={activeRightTab === 'banners'} onClick={() => { setActiveRightTab('banners'); setRightSidebarCollapsed(false); }} />
+                    <RailTab icon={<UserCheck />} label="Green Room" active={activeRightTab === 'backstage'} onClick={() => { setActiveRightTab('backstage'); setRightSidebarCollapsed(false); }} />
+                    <RailTab icon={<FileVideo />} label="Recording" active={activeRightTab === 'recording'} onClick={() => { setActiveRightTab('recording'); setRightSidebarCollapsed(false); }} />
+                    <RailTab icon={<Sliders />} label="Mixer" active={activeRightTab === 'mixer'} onClick={() => { setActiveRightTab('mixer'); setRightSidebarCollapsed(false); }} />
+                    <RailTab icon={<Users />} label="Private" active={activeRightTab === 'private_chat'} onClick={() => { setActiveRightTab('private_chat'); setRightSidebarCollapsed(false); }} />
+                    <RailTab icon={<Activity />} label="Health" active={activeRightTab === 'stream_health'} onClick={() => { setActiveRightTab('stream_health'); setRightSidebarCollapsed(false); }} />
+                    <RailTab icon={<Shield />} label="Guests" active={activeRightTab === 'guests'} onClick={() => { setActiveRightTab('guests'); setRightSidebarCollapsed(false); }} />
+                </div>
+            )}
+
+            {/* Guest Right Sidebar - Chat placeholder */}
+            {!isHost && !rightSidebarCollapsed && (
+                <div className="w-72 bg-app-surface border-l border-app-border flex flex-col z-20 shadow-sm transition-all duration-300 relative">
+                    {/* Collapse toggle button */}
+                    <button 
+                        className="absolute -left-3 top-4 w-6 h-6 bg-app-surface border border-app-border rounded-full flex items-center justify-center z-30 hover:bg-app-bg transition-colors"
+                        onClick={() => setRightSidebarCollapsed(true)}
+                    >
+                        <ChevronRight className="w-3 h-3" />
+                    </button>
+                    
+                    {/* Guest Chat Panel */}
+                    {guestRightTab === 'chat' && (
+                        <div className="flex-1 flex flex-col overflow-hidden">
+                            <div className="p-3 border-b border-app-border">
+                                <h3 className="text-xs font-bold text-content-high uppercase tracking-wider">Session Chat</h3>
+                            </div>
+                            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+                                <div className="w-16 h-16 rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center mb-4">
+                                    <MessageSquare className="w-8 h-8 text-indigo-500" />
+                                </div>
+                                <h3 className="text-sm font-bold text-content-high mb-2">Chat Coming Soon</h3>
+                                <p className="text-xs text-content-medium">
+                                    Send messages to everyone in the session. This feature will be available in an upcoming update.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* Guest Private Chat Panel */}
+                    {guestRightTab === 'private_chat' && (
+                        <div className="flex-1 flex flex-col overflow-hidden">
+                            <div className="p-3 border-b border-app-border">
+                                <h3 className="text-xs font-bold text-content-high uppercase tracking-wider">Private Chat</h3>
+                            </div>
+                            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+                                <div className="w-16 h-16 rounded-full bg-purple-500/10 border border-purple-500/20 flex items-center justify-center mb-4">
+                                    <Lock className="w-8 h-8 text-purple-500" />
+                                </div>
+                                <h3 className="text-sm font-bold text-content-high mb-2">Private Chat Coming Soon</h3>
+                                <p className="text-xs text-content-medium">
+                                    Send private messages to the host or other participants. This feature will be available in an upcoming update.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Guest Tab Rail */}
+            {!isHost && (
+                <div className="w-12 bg-app-surface border-l border-app-border flex flex-col items-center py-4 z-20 gap-3 shrink-0 relative">
+                    {/* Expand button when collapsed */}
+                    {rightSidebarCollapsed && (
+                        <button 
+                            className="absolute -left-3 top-4 w-6 h-6 bg-app-surface border border-app-border rounded-full flex items-center justify-center z-30 hover:bg-app-bg transition-colors"
+                            onClick={() => setRightSidebarCollapsed(false)}
+                        >
+                            <ChevronLeft className="w-3 h-3" />
+                        </button>
+                    )}
+                    <button 
+                        className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${guestRightTab === 'chat' ? 'bg-indigo-500/20 text-indigo-400' : 'text-content-medium hover:text-content-high hover:bg-app-bg'}`}
+                        onClick={() => { setGuestRightTab('chat'); setRightSidebarCollapsed(false); }}
+                        title="Session Chat"
+                    >
+                        <MessageSquare className="w-4 h-4" />
+                    </button>
+                    <button 
+                        className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${guestRightTab === 'private_chat' ? 'bg-purple-500/20 text-purple-400' : 'text-content-medium hover:text-content-high hover:bg-app-bg'}`}
+                        onClick={() => { setGuestRightTab('private_chat'); setRightSidebarCollapsed(false); }}
+                        title="Private Chat"
+                    >
+                        <Lock className="w-4 h-4" />
+                    </button>
                 </div>
             )}
 
@@ -1418,6 +2115,115 @@ export function Studio({ config, onLeave }: StudioProps) {
                                     Add Destination
                                 </Button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            {/* Nerd Metrics Modal - Pro+ tier */}
+            {showNerdMetrics && (subscriptionTier === 'pro' || subscriptionTier === 'enterprise') && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setShowNerdMetrics(false)} />
+                    <div className="relative w-full max-w-lg bg-app-surface border border-app-border rounded-2xl shadow-2xl p-6">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-bold flex items-center gap-2">
+                                <BarChart3 className="w-5 h-5 text-indigo-400" />
+                                Streaming Metrics
+                            </h3>
+                            <button onClick={() => setShowNerdMetrics(false)} className="p-1 hover:bg-app-surface-alt rounded">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="space-y-4 font-mono text-sm">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-app-bg/50 rounded-lg p-3">
+                                    <span className="text-content-low text-xs">Video Bitrate</span>
+                                    <div className="text-emerald-400 font-semibold">3,500 kbps</div>
+                                </div>
+                                <div className="bg-app-bg/50 rounded-lg p-3">
+                                    <span className="text-content-low text-xs">Audio Bitrate</span>
+                                    <div className="text-emerald-400 font-semibold">128 kbps</div>
+                                </div>
+                                <div className="bg-app-bg/50 rounded-lg p-3">
+                                    <span className="text-content-low text-xs">Frame Rate</span>
+                                    <div className="text-emerald-400 font-semibold">30 fps</div>
+                                </div>
+                                <div className="bg-app-bg/50 rounded-lg p-3">
+                                    <span className="text-content-low text-xs">Resolution</span>
+                                    <div className="text-emerald-400 font-semibold">1920×1080</div>
+                                </div>
+                                <div className="bg-app-bg/50 rounded-lg p-3">
+                                    <span className="text-content-low text-xs">Dropped Frames</span>
+                                    <div className="text-amber-400 font-semibold">12 (0.01%)</div>
+                                </div>
+                                <div className="bg-app-bg/50 rounded-lg p-3">
+                                    <span className="text-content-low text-xs">Encoder</span>
+                                    <div className="text-content-med font-semibold">H.264 (Main)</div>
+                                </div>
+                            </div>
+                            <div className="border-t border-app-border pt-4">
+                                <h4 className="text-sm font-semibold mb-2">Destination Health</h4>
+                                {activeDestinations.length > 0 ? (
+                                    <div className="space-y-2">
+                                        {activeDestinations.map(dest => (
+                                            <div key={dest.id} className="flex items-center justify-between bg-app-bg/50 rounded-lg p-3">
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`w-2 h-2 rounded-full ${dest.status === 'connected' ? 'bg-emerald-500' : dest.status === 'reconnecting' ? 'bg-amber-400 animate-pulse' : 'bg-red-500'}`} />
+                                                    <span className="font-semibold">{dest.platform}</span>
+                                                    <span className="text-content-low">- {dest.name}</span>
+                                                </div>
+                                                <div className="text-content-med">{dest.bitrate} kbps</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="text-content-low text-xs">No active destinations</p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            {/* Disable Destination Warning Modal */}
+            {destToDisable && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setDestToDisable(null)} />
+                    <div className="relative w-full max-w-md bg-app-surface border border-app-border rounded-2xl shadow-2xl p-6">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-12 h-12 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+                                <AlertTriangle className="w-6 h-6 text-amber-500" />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold">Stop Streaming?</h3>
+                                <p className="text-content-low text-sm">
+                                    {activeDestinations.find(d => d.id === destToDisable)?.platform} - {activeDestinations.find(d => d.id === destToDisable)?.name}
+                                </p>
+                            </div>
+                        </div>
+                        <p className="text-content-medium text-sm mb-6">
+                            This will immediately stop streaming to this destination. Viewers on this platform will see your stream end.
+                            Other destinations will continue streaming.
+                        </p>
+                        <div className="flex gap-3">
+                            <Button 
+                                variant="secondary" 
+                                className="flex-1"
+                                onClick={() => setDestToDisable(null)}
+                            >
+                                Cancel
+                            </Button>
+                            <Button 
+                                variant="danger"
+                                className="flex-1"
+                                onClick={() => {
+                                    setActiveDestinations(prev => prev.filter(d => d.id !== destToDisable));
+                                    // TODO: Call API to stop specific egress
+                                    setDestToDisable(null);
+                                }}
+                            >
+                                Stop Stream
+                            </Button>
                         </div>
                     </div>
                 </div>

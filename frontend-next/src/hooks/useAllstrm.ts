@@ -148,6 +148,8 @@ export function useAllstrm(options: UseAllstrmOptions): UseAllstrmReturn & {
 
     const [globalMuteState, setGlobalMuteState] = useState(false);
     const [globalVideoState, setGlobalVideoState] = useState(false);
+    const [wasKicked, setWasKicked] = useState(false);
+    const [sessionEnded, setSessionEnded] = useState(false);
     const [isLocalInWaitingRoom, setIsLocalInWaitingRoom] = useState(
         options.initialConfig?.role === 'guest'
     );
@@ -818,10 +820,36 @@ export function useAllstrm(options: UseAllstrmOptions): UseAllstrmReturn & {
         return () => clearInterval(pollInterval);
     }, [isConnected, options.roomId, myParticipantId, isLocalInWaitingRoom]);
 
-    const toggleVideo = useCallback(() => {
-        localStreamRef.current?.getVideoTracks().forEach(t => { t.enabled = !t.enabled; });
+    const toggleVideo = useCallback(async () => {
+        if (!localStreamRef.current) return;
+        
+        const videoTracks = localStreamRef.current.getVideoTracks();
+        if (videoTracks.length === 0) {
+            // No video track, try to get one
+            try {
+                const stream = await getStreamWithConstraints();
+                if (stream) {
+                    const newVideoTrack = stream.getVideoTracks()[0];
+                    if (newVideoTrack) {
+                        localStreamRef.current.addTrack(newVideoTrack);
+                        setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
+                        
+                        // Send new track to SFU/WebRTC
+                        if (sfuWebrtcManagerRef.current) {
+                            sfuWebrtcManagerRef.current.setLocalStream(localStreamRef.current);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('[useAllstrm] Failed to re-acquire camera:', e);
+            }
+        } else {
+            // Toggle existing track
+            videoTracks.forEach(t => { t.enabled = !t.enabled; });
+            setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
+        }
         setForceUpdate({});
-    }, []);
+    }, [getStreamWithConstraints]);
 
     const toggleAudio = useCallback(() => {
         localStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = !t.enabled; });
@@ -1396,6 +1424,8 @@ export function useAllstrm(options: UseAllstrmOptions): UseAllstrmReturn & {
         admitParticipant, startFilePresentation,
         nextSlide, prevSlide, presentationState,
         globalMuteState, globalVideoState,
+        wasKicked,
+        sessionEnded,
         activeRecordings,
         pausedRecordings,
         setMixerLayout,
@@ -1413,6 +1443,8 @@ export function useAllstrm(options: UseAllstrmOptions): UseAllstrmReturn & {
         admitParticipant, startFilePresentation,
         nextSlide, prevSlide, presentationState,
         globalMuteState, globalVideoState,
+        wasKicked,
+        sessionEnded,
         activeRecordings,
         pausedRecordings,
         setMixerLayout,

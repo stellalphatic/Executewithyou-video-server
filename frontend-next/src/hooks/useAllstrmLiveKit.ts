@@ -27,6 +27,8 @@ import type {
   BroadcastStatus,
 } from '@/types';
 import { Scene } from '../types/layout';
+import { parsePresentation, PresentationStream } from '@/utils/filePresentation';
+import { ApiClient } from '@/lib/api';
 
 /**
  * LiveKit-powered implementation of useAllstrm hook
@@ -42,6 +44,7 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
   unmuteParticipant: (id: string) => void;
   startParticipantVideo: (id: string) => void;
   startFilePresentation: (file: File) => void;
+  stopFilePresentation: () => void;
   pauseRecording: (type?: 'mixed' | 'iso') => void;
   resumeRecording: (type?: 'mixed' | 'iso') => void;
   nextSlide: () => void;
@@ -54,12 +57,25 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
   setMixerLayout: (layout: 'grid' | 'speaker', focusId?: string) => void;
   updateRecordingScene: (scene: Scene) => void;
   isLocalInWaitingRoom: boolean;
+  sendDataMessage: (message: Record<string, unknown>) => Promise<void>;
+  receivedStageState: string[];
+  stageStateVersion: number;
+  receivedPermissions: {
+    canToggleAudio: boolean;
+    canToggleVideo: boolean;
+    canShareScreen: boolean;
+    canSendChat: boolean;
+    canRaiseHand: boolean;
+  };
 } {
   // LiveKit Room reference
   const roomRef = useRef<Room | null>(null);
   const localVideoTrackRef = useRef<LocalVideoTrack | null>(null);
   const localAudioTrackRef = useRef<LocalAudioTrack | null>(null);
-  
+
+  // Egress IDs for broadcast cleanup
+  const egressIdsRef = useRef<string[]>([]);
+
   // Connection state refs to prevent race conditions
   const isConnectedRef = useRef(false);
   const isConnectingRef = useRef(false);
@@ -75,24 +91,83 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
   const [myParticipantId, setMyParticipantId] = useState<string | null>(null);
   const [layoutState, setLayoutState] = useState<LayoutState | null>(null);
+
+  // File presentation state
+  const presentationStreamRef = useRef<PresentationStream | null>(null);
+  const [presentationState, setPresentationState] = useState<{
+    currentSlide: number;
+    totalSlides: number;
+    isPresentingFile: boolean;
+  }>({ currentSlide: 0, totalSlides: 0, isPresentingFile: false });
+
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [broadcastStatus, setBroadcastStatus] = useState<BroadcastStatus>('idle');
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [activeRecordings, setActiveRecordings] = useState<('mixed' | 'iso')[]>([]);
+
+  // Waiting room state - default to true for guests, they must be explicitly admitted
+  const configRole = options.initialConfig?.role;
+  const isGuest = configRole === 'guest';
+  const roomId = options.roomId;
+  const admissionStorageKey = `admitted_${roomId}`;
+  console.log('[useAllstrmLiveKit] Hook init - role:', configRole, 'isGuest:', isGuest);
+
+  // Initialize hasBeenAdmitted from sessionStorage to survive re-renders
+  const [hasBeenAdmitted, setHasBeenAdmitted] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem(admissionStorageKey) === 'true';
+    }
+    return false;
+  });
+
+  // Initialize waiting room state - check if already admitted
+  const [isLocalInWaitingRoom, setIsLocalInWaitingRoom] = useState<boolean>(() => {
+    if (typeof window !== 'undefined' && sessionStorage.getItem(admissionStorageKey) === 'true') {
+      return false; // Already admitted, not in waiting room
+    }
+    return isGuest;
+  });
+  const [participantMetadata, setParticipantMetadata] = useState<Record<string, { inWaitingRoom?: boolean }>>(
+    isGuest ? { [options.initialConfig?.userId || 'guest']: { inWaitingRoom: true } } : {}
+  );
+  const [admittedParticipants, setAdmittedParticipants] = useState<Set<string>>(new Set());
+  // Ref to always have latest admittedParticipants (avoids stale closure in event handlers)
+  const admittedParticipantsRef = useRef<Set<string>>(new Set());
   const [pausedRecordings, setPausedRecordings] = useState<('mixed' | 'iso')[]>([]);
   const [globalMuteState, setGlobalMuteState] = useState(false);
   const [globalVideoState, setGlobalVideoState] = useState(false);
-  const [isLocalInWaitingRoom, setIsLocalInWaitingRoom] = useState(false);
-  const [presentationState, setPresentationState] = useState({
-    currentSlide: 1,
-    totalSlides: 1,
-    isPresentingFile: false,
+  const [receivedStageState, setReceivedStageState] = useState<string[]>([]);
+  // Track stage sync version to detect changes including clearing stage
+  const [stageStateVersion, setStageStateVersion] = useState(0);
+  // Permissions received from host for this guest
+  const [receivedPermissions, setReceivedPermissions] = useState<{
+    canToggleAudio: boolean;
+    canToggleVideo: boolean;
+    canShareScreen: boolean;
+    canSendChat: boolean;
+    canRaiseHand: boolean;
+  }>({
+    canToggleAudio: true,
+    canToggleVideo: true,
+    canShareScreen: false,
+    canSendChat: true,
+    canRaiseHand: true,
   });
+  // Track if guest was kicked by host
+  const [wasKicked, setWasKicked] = useState(false);
+  // Track if session ended (host left)
+  const [sessionEnded, setSessionEnded] = useState(false);
 
   // Refs for recording
   const mediaRecordersRef = useRef<Map<string, MediaRecorder>>(new Map());
   const recordedChunksRef = useRef<Map<string, Blob[]>>(new Map());
   const currentSceneRef = useRef<Scene | null>(null);
+
+  // WYSIWYG compositing refs
+  const compositeCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const compositeCtxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const compositeAnimationRef = useRef<number | null>(null);
+  const stageElementRef = useRef<HTMLDivElement | null>(null);
 
   // Convert LiveKit participant to Allstrm participant format
   const convertParticipant = useCallback(
@@ -101,15 +176,24 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
       const audioTrack = participant.getTrackPublication(Track.Source.Microphone);
       const screenTrack = participant.getTrackPublication(Track.Source.ScreenShare);
 
-      let metadata: { role?: string; isHost?: boolean } = {};
+      let metadata: { role?: string; isHost?: boolean; inWaitingRoom?: boolean } = {};
       try {
         metadata = participant.metadata ? JSON.parse(participant.metadata) : {};
       } catch {
         metadata = {};
       }
 
+      // Determine if participant is in waiting room
+      // Check if they've been admitted (overrides metadata), or check metadata
+      const participantId = isLocal ? 'local' : participant.identity;
+      // For local participant: check hasBeenAdmitted state (set when guest receives admission)
+      // For remote participants: check admittedParticipants Set (tracked by host)
+      // Use ref to avoid stale closure in event handlers
+      const isAdmitted = isLocal ? hasBeenAdmitted : admittedParticipantsRef.current.has(participantId);
+      const isInWaitingRoom = !isAdmitted && metadata.inWaitingRoom === true;
+
       return {
-        id: isLocal ? 'local' : participant.identity,
+        id: participantId,
         room_id: options.roomId,
         display_name: participant.name || participant.identity || 'Anonymous',
         role: (metadata.role as AllstrmParticipant['role']) || (metadata.isHost ? 'host' : 'guest'),
@@ -118,14 +202,45 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
           video_enabled: videoTrack?.isEnabled ?? false,
           audio_enabled: audioTrack?.isEnabled ?? false,
           screen_sharing: screenTrack?.isEnabled ?? false,
-          connection_quality: participant.connectionQuality || 'good',
+          connection_quality: (participant.connectionQuality?.toString() || 'good') as 'good' | 'excellent' | 'fair' | 'poor',
         },
-        is_on_stage: true,
-        is_in_waiting_room: false,
+        is_on_stage: false,  // Stage status controlled by Studio's onStageParticipants state
+        is_in_waiting_room: isInWaitingRoom,
       };
     },
-    [options.roomId]
+    [options.roomId, admittedParticipants, hasBeenAdmitted]
   );
+
+  // Handle beforeunload to notify guests when host closes tab
+  useEffect(() => {
+    if (isGuest) return; // Only host needs to send notifications
+
+    const handleBeforeUnload = () => {
+      // Send sessionEnded message synchronously (best effort, may not always work)
+      if (roomRef.current) {
+        try {
+          // Use sendBeacon for more reliable delivery during unload
+          const message = JSON.stringify({
+            type: 'sessionEnded',
+            timestamp: Date.now(),
+            reason: 'host_left'
+          });
+          // Also try to send via data message (may not complete)
+          roomRef.current.localParticipant.publishData(
+            new TextEncoder().encode(message),
+            { reliable: true }
+          ).catch(() => { });
+        } catch (err) {
+          console.warn('[useAllstrmLiveKit] Could not send sessionEnded on unload:', err);
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [isGuest]);
 
   // Update participants list from room
   const updateParticipants = useCallback(() => {
@@ -136,7 +251,10 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
 
     // Add local participant
     if (room.localParticipant) {
-      allParticipants.push(convertParticipant(room.localParticipant, true));
+      const localParticipant = convertParticipant(room.localParticipant, true);
+      allParticipants.push(localParticipant);
+      // NOTE: We do NOT update isLocalInWaitingRoom here anymore
+      // That state is managed explicitly via DataReceived admission messages
     }
 
     // Add remote participants
@@ -211,7 +329,7 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
 
     // Increment connection attempt counter
     const currentAttempt = ++connectionAttemptRef.current;
-    
+
     isConnectingRef.current = true;
     setIsConnecting(true);
     setError(null);
@@ -221,13 +339,13 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
     try {
       // Fetch token
       const tokenData = await fetchToken();
-      
+
       // Check if this attempt is still valid (not superseded by newer attempt or disconnect)
       if (connectionAttemptRef.current !== currentAttempt) {
         console.log('[useAllstrmLiveKit] Connection attempt', currentAttempt, 'superseded');
         return;
       }
-      
+
       if (!tokenData) {
         isConnectingRef.current = false;
         setIsConnecting(false);
@@ -255,6 +373,37 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
         setIsConnected(true);
         setIsConnecting(false);
         setMyParticipantId(room.localParticipant?.identity || null);
+
+        // Check if local participant is in waiting room based on metadata
+        if (room.localParticipant) {
+          let metadata: { inWaitingRoom?: boolean; role?: string } = {};
+          try {
+            metadata = room.localParticipant.metadata ? JSON.parse(room.localParticipant.metadata) : {};
+          } catch {
+            metadata = {};
+          }
+          console.log('[useAllstrmLiveKit] Local participant metadata:', {
+            identity: room.localParticipant.identity,
+            metadata,
+            rawMetadata: room.localParticipant.metadata,
+          });
+
+          // Set initial waiting room state based on token metadata
+          // CRITICAL: Check if already admitted via sessionStorage FIRST to prevent duplicate waiting room
+          const alreadyAdmitted = typeof window !== 'undefined' && sessionStorage.getItem(admissionStorageKey) === 'true';
+          if (alreadyAdmitted) {
+            console.log('[useAllstrmLiveKit] Already admitted via sessionStorage, keeping out of waiting room');
+            setIsLocalInWaitingRoom(false);
+            setHasBeenAdmitted(true);
+          } else if (metadata.inWaitingRoom === true) {
+            console.log('[useAllstrmLiveKit] Guest is in waiting room');
+            setIsLocalInWaitingRoom(true);
+          } else {
+            console.log('[useAllstrmLiveKit] Participant is NOT in waiting room (host or already admitted)');
+            setIsLocalInWaitingRoom(false);
+          }
+        }
+
         updateParticipants();
         updateRemoteStreams();
 
@@ -289,6 +438,18 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
 
       room.on(RoomEvent.ParticipantDisconnected, (participant: RemoteParticipant) => {
         console.log('[useAllstrmLiveKit] Participant disconnected:', participant.identity);
+
+        // Check if the disconnected participant was the host
+        try {
+          const metadata = participant.metadata ? JSON.parse(participant.metadata) : {};
+          if (metadata.isHost || metadata.role === 'host' || metadata.role === 'owner') {
+            console.log('[useAllstrmLiveKit] Host disconnected - session ended');
+            setSessionEnded(true);
+          }
+        } catch (err) {
+          console.warn('[useAllstrmLiveKit] Could not parse participant metadata:', err);
+        }
+
         updateParticipants();
         setRemoteStreams((prev) => {
           const updated = { ...prev };
@@ -336,9 +497,90 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
         updateParticipants();
       });
 
-      room.on(RoomEvent.DataReceived, (payload, participant) => {
+      room.on(RoomEvent.LocalTrackUnpublished, (publication: LocalTrackPublication) => {
+        console.log('[useAllstrmLiveKit] Local track unpublished:', publication.kind);
+        // Update local stream to remove the unpublished track
+        if (room.localParticipant) {
+          const stream = new MediaStream();
+          room.localParticipant.trackPublications.forEach((pub) => {
+            if (pub.track && pub.track.mediaStreamTrack) {
+              stream.addTrack(pub.track.mediaStreamTrack);
+            }
+          });
+          setLocalStream(stream.getTracks().length > 0 ? stream : null);
+        }
+        updateParticipants();
+      });
+
+      room.on(RoomEvent.DataReceived, (payload, participant, kind, topic) => {
+        console.log('[useAllstrmLiveKit] DataReceived event fired!', {
+          from: participant?.identity,
+          kind,
+          topic,
+          payloadLength: payload?.length,
+        });
+
         try {
           const data = JSON.parse(new TextDecoder().decode(payload));
+          console.log('[useAllstrmLiveKit] Parsed data message:', data);
+
+          // Handle admission message
+          if (data.type === 'admission') {
+            console.log('[useAllstrmLiveKit] Received admission message:', data);
+            if (data.admitted) {
+              // We've been admitted! Update local state
+              console.log('[useAllstrmLiveKit] Processing admission - setting isLocalInWaitingRoom to false');
+              setAdmittedParticipants((prev) => new Set([...prev, 'local']));
+              setIsLocalInWaitingRoom(false);
+              setHasBeenAdmitted(true);
+              // Persist to sessionStorage to survive re-renders
+              if (typeof window !== 'undefined') {
+                sessionStorage.setItem(admissionStorageKey, 'true');
+              }
+              console.log('[useAllstrmLiveKit] Admitted to room!');
+            }
+          }
+
+          // Handle stage sync from host (guest receives this)
+          if (data.type === 'stageSync') {
+            console.log('[useAllstrmLiveKit] Received stage sync:', data.onStageIds, 'timestamp:', data.timestamp);
+            // Store stage state - Studio component will use this for guests
+            setReceivedStageState(data.onStageIds || []);
+            // Increment version to trigger effect even for empty arrays
+            setStageStateVersion(v => v + 1);
+          }
+
+          // Handle permission updates from host (guest receives this)
+          if (data.type === 'permission') {
+            console.log('[useAllstrmLiveKit] Received permission update:', data);
+            // Check if this permission message is for us
+            const localId = roomRef.current?.localParticipant?.identity;
+            if (data.targetId === localId || data.targetId === 'local') {
+              setReceivedPermissions(prev => ({
+                ...prev,
+                ...(data.permissions || {})
+              }));
+              console.log('[useAllstrmLiveKit] Applied permissions:', data.permissions);
+            }
+          }
+
+          // Handle kick message from host
+          if (data.type === 'kick') {
+            console.log('[useAllstrmLiveKit] Received kick message:', data);
+            const localId = roomRef.current?.localParticipant?.identity;
+            if (data.targetId === localId || data.targetId === 'local') {
+              setWasKicked(true);
+              console.log('[useAllstrmLiveKit] You have been kicked from the room');
+            }
+          }
+
+          // Handle session ended message (host left)
+          if (data.type === 'sessionEnded') {
+            console.log('[useAllstrmLiveKit] Received sessionEnded message - host left');
+            setSessionEnded(true);
+          }
+
+          // Handle chat messages
           if (data.type === 'chat') {
             setChatMessages((prev) => [
               ...prev,
@@ -351,8 +593,9 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
               },
             ]);
           }
-        } catch {
+        } catch (e) {
           // Ignore non-JSON messages
+          console.log('[useAllstrmLiveKit] Non-JSON data received:', e);
         }
       });
 
@@ -369,7 +612,7 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
 
       // Connect to room with video/audio
       await room.connect(tokenData.serverUrl, tokenData.token);
-      
+
       console.log('[useAllstrmLiveKit] Room connected, enabling tracks...');
 
       // Enable camera and microphone
@@ -390,7 +633,7 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
         preset_name: 'grid',
         version: 1,
       });
-      
+
       console.log('[useAllstrmLiveKit] Connection setup complete');
     } catch (err) {
       console.error('[useAllstrmLiveKit] Connection error:', err);
@@ -410,12 +653,45 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
   // Disconnect from room
   const disconnect = useCallback(async () => {
     console.log('[useAllstrmLiveKit] Disconnecting...');
-    
+
+    // If host is disconnecting, notify all guests that session is ending
+    if (!isGuest && roomRef.current) {
+      try {
+        await roomRef.current.localParticipant.publishData(
+          new TextEncoder().encode(JSON.stringify({
+            type: 'sessionEnded',
+            timestamp: Date.now(),
+            reason: 'host_left'
+          })),
+          { reliable: true }
+        );
+        console.log('[useAllstrmLiveKit] Sent sessionEnded notification to guests');
+      } catch (err) {
+        console.error('[useAllstrmLiveKit] Failed to send sessionEnded:', err);
+      }
+    }
+
+    // Clear admission state from sessionStorage
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem(admissionStorageKey);
+    }
+
     // Reset connection state refs
     isConnectedRef.current = false;
     isConnectingRef.current = false;
     connectionAttemptRef.current++;
-    
+
+    // Explicitly stop all local tracks to turn off camera light
+    if (roomRef.current?.localParticipant) {
+      console.log('[useAllstrmLiveKit] Stopping all local tracks...');
+      roomRef.current.localParticipant.trackPublications.forEach((pub) => {
+        if (pub.track?.mediaStreamTrack) {
+          pub.track.mediaStreamTrack.stop();
+          console.log('[useAllstrmLiveKit] Stopped track:', pub.track.kind);
+        }
+      });
+    }
+
     if (roomRef.current) {
       await roomRef.current.disconnect();
       roomRef.current = null;
@@ -435,13 +711,39 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
     setScreenStream(null);
     setActiveRecordings([]);
     setPausedRecordings([]);
-  }, []);
+    setHasBeenAdmitted(false);
+    setIsLocalInWaitingRoom(isGuest);
+  }, [admissionStorageKey, isGuest]);
 
   // Toggle local video
   const toggleVideo = useCallback(async () => {
     if (!roomRef.current?.localParticipant) return;
-    const enabled = roomRef.current.localParticipant.isCameraEnabled;
-    await roomRef.current.localParticipant.setCameraEnabled(!enabled);
+    const room = roomRef.current;
+    const enabled = room.localParticipant.isCameraEnabled;
+
+    await room.localParticipant.setCameraEnabled(!enabled);
+
+    // Update local stream after camera toggle
+    // This ensures the stream includes the new video track state
+    const stream = new MediaStream();
+    room.localParticipant.trackPublications.forEach((pub) => {
+      if (pub.track && pub.track.mediaStreamTrack) {
+        stream.addTrack(pub.track.mediaStreamTrack);
+      }
+    });
+    if (stream.getTracks().length > 0) {
+      setLocalStream(stream);
+    } else if (!enabled) {
+      // Camera is being turned off, keep audio-only stream
+      const audioStream = new MediaStream();
+      room.localParticipant.trackPublications.forEach((pub) => {
+        if (pub.track && pub.track.kind === 'audio') {
+          audioStream.addTrack(pub.track.mediaStreamTrack);
+        }
+      });
+      setLocalStream(audioStream.getTracks().length > 0 ? audioStream : null);
+    }
+
     updateParticipants();
   }, [updateParticipants]);
 
@@ -511,34 +813,129 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
     currentSceneRef.current = scene;
   }, []);
 
-  // Start recording
+  // Start recording - WYSIWYG compositing for mixed type
   const startRecording = useCallback(
-    async (type: 'mixed' | 'iso' = 'mixed') => {
+    async (type: 'mixed' | 'iso' = 'mixed', stageElement?: HTMLDivElement | null) => {
       if (activeRecordings.includes(type)) return;
 
       let streamToRecord: MediaStream | null = null;
       recordedChunksRef.current.set(type, []);
 
-      if (type === 'mixed') {
-        // For mixed, we'd ideally use a server-side egress
-        // For now, record the local stream + remote audio mixed
-        const stream = new MediaStream();
+      if (type === 'mixed' && stageElement) {
+        // WYSIWYG Recording - Composite the stage element to canvas
+        stageElementRef.current = stageElement;
 
-        // Add local video
-        if (localStream) {
-          localStream.getVideoTracks().forEach((t) => stream.addTrack(t.clone()));
+        // Create compositing canvas at 1920x1080
+        const canvas = document.createElement('canvas');
+        canvas.width = 1920;
+        canvas.height = 1080;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          console.error('Failed to create canvas context');
+          return;
         }
+        compositeCanvasRef.current = canvas;
+        compositeCtxRef.current = ctx;
+
+        // Get stage dimensions for scaling
+        const stageRect = stageElement.getBoundingClientRect();
+        const scaleX = canvas.width / stageRect.width;
+        const scaleY = canvas.height / stageRect.height;
+
+        // Compositing loop
+        const compositeFrame = () => {
+          if (!compositeCtxRef.current || !stageElementRef.current) return;
+          const ctx = compositeCtxRef.current;
+          const stage = stageElementRef.current;
+
+          // Clear canvas with stage background
+          const stageBg = window.getComputedStyle(stage).backgroundColor;
+          ctx.fillStyle = stageBg || '#000';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          // Draw all video elements from the stage
+          const videos = stage.querySelectorAll('video');
+          videos.forEach((video) => {
+            if (video.readyState >= 2) { // HAVE_CURRENT_DATA
+              const rect = video.getBoundingClientRect();
+              const stageRect = stage.getBoundingClientRect();
+
+              // Calculate position relative to stage
+              const x = (rect.left - stageRect.left) * scaleX;
+              const y = (rect.top - stageRect.top) * scaleY;
+              const w = rect.width * scaleX;
+              const h = rect.height * scaleY;
+
+              // Get transform for mirroring
+              const transform = window.getComputedStyle(video).transform;
+              const isMirrored = transform.includes('-1');
+
+              ctx.save();
+              if (isMirrored) {
+                ctx.translate(x + w, y);
+                ctx.scale(-1, 1);
+                ctx.drawImage(video, 0, 0, w, h);
+              } else {
+                ctx.drawImage(video, x, y, w, h);
+              }
+              ctx.restore();
+            }
+          });
+
+          // Draw overlay elements (text, images) - simplified
+          const overlays = stage.querySelectorAll('[data-overlay="true"]');
+          overlays.forEach((overlay) => {
+            const rect = overlay.getBoundingClientRect();
+            const stageRect = stage.getBoundingClientRect();
+            const x = (rect.left - stageRect.left) * scaleX;
+            const y = (rect.top - stageRect.top) * scaleY;
+
+            if (overlay.tagName === 'IMG') {
+              ctx.drawImage(overlay as HTMLImageElement, x, y, rect.width * scaleX, rect.height * scaleY);
+            }
+          });
+
+          // Continue loop
+          compositeAnimationRef.current = requestAnimationFrame(compositeFrame);
+        };
+
+        // Start compositing
+        compositeAnimationRef.current = requestAnimationFrame(compositeFrame);
+
+        // Create stream from canvas
+        const canvasStream = canvas.captureStream(30);
 
         // Add all audio tracks
+        const audioStream = new MediaStream();
         if (localStream) {
+          localStream.getAudioTracks().forEach((t) => audioStream.addTrack(t.clone()));
+        }
+        Object.values(remoteStreams).forEach((rs) => {
+          rs.getAudioTracks().forEach((t) => audioStream.addTrack(t.clone()));
+        });
+
+        // Combine canvas video with audio
+        const combinedStream = new MediaStream([
+          ...canvasStream.getVideoTracks(),
+          ...audioStream.getAudioTracks(),
+        ]);
+
+        streamToRecord = combinedStream;
+        console.log('[Recording] Starting WYSIWYG composited recording');
+      } else if (type === 'mixed') {
+        // Fallback: simple mixed recording (local video + all audio)
+        const stream = new MediaStream();
+        if (localStream) {
+          localStream.getVideoTracks().forEach((t) => stream.addTrack(t.clone()));
           localStream.getAudioTracks().forEach((t) => stream.addTrack(t.clone()));
         }
         Object.values(remoteStreams).forEach((rs) => {
           rs.getAudioTracks().forEach((t) => stream.addTrack(t.clone()));
         });
-
         streamToRecord = stream;
+        console.log('[Recording] Starting fallback mixed recording (no stage element)');
       } else {
+        // ISO recording
         streamToRecord = screenStream || localStream;
       }
 
@@ -555,7 +952,7 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
       try {
         const recorder = new MediaRecorder(streamToRecord, {
           mimeType,
-          videoBitsPerSecond: 5000000,
+          videoBitsPerSecond: 8000000, // Increased for WYSIWYG quality
         });
 
         recorder.ondataavailable = (e) => {
@@ -567,6 +964,15 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
         };
 
         recorder.onstop = () => {
+          // Stop compositing animation if running
+          if (compositeAnimationRef.current) {
+            cancelAnimationFrame(compositeAnimationRef.current);
+            compositeAnimationRef.current = null;
+          }
+          compositeCanvasRef.current = null;
+          compositeCtxRef.current = null;
+          stageElementRef.current = null;
+
           const chunks = recordedChunksRef.current.get(type);
           if (chunks && chunks.length > 0) {
             const blob = new Blob(chunks, { type: mimeType || 'video/webm' });
@@ -734,6 +1140,23 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
   }, []);
 
   const removeParticipant = useCallback((id: string) => {
+    // Send kick notification to the participant before removing
+    if (roomRef.current) {
+      try {
+        const kickMessage = {
+          type: 'kick',
+          targetId: id,
+          timestamp: Date.now()
+        };
+        roomRef.current.localParticipant.publishData(
+          new TextEncoder().encode(JSON.stringify(kickMessage)),
+          { reliable: true }
+        );
+        console.log('[useAllstrmLiveKit] Kick message sent to:', id);
+      } catch (err) {
+        console.error('[useAllstrmLiveKit] Failed to send kick message:', err);
+      }
+    }
     setParticipants((p) => p.filter((x) => x.id !== id));
   }, []);
 
@@ -765,52 +1188,313 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
     ]);
   }, []);
 
+  // Fetch destinations from database on mount or userId change
+  useEffect(() => {
+    const fetchDestinations = async () => {
+      const userId = options.initialConfig?.userId;
+      if (!userId) return;
+
+      try {
+        const { destinations: dbDestinations } = await ApiClient.listDestinations(userId);
+        setDestinations(dbDestinations);
+        console.log('[useAllstrmLiveKit] Loaded destinations from DB:', dbDestinations.length);
+      } catch (err) {
+        console.error('[useAllstrmLiveKit] Failed to load destinations:', err);
+      }
+    };
+
+    fetchDestinations();
+  }, [options.initialConfig?.userId]);
+
   const startBroadcast = useCallback(async () => {
+    if (!options.roomId) {
+      console.warn('[useAllstrmLiveKit] Cannot start broadcast: no roomId');
+      return;
+    }
+
+    // Use destinations from state (which are synced with DB)
+    const enabledDests = destinations
+      .filter((d) => d.enabled)
+      .map((d) => ({
+        rtmpUrl: d.url,
+        streamKey: d.streamKey
+      }));
+
+    if (enabledDests.length === 0) {
+      console.warn('[useAllstrmLiveKit] No enabled destinations found');
+      return;
+    }
+
+    console.log('[useAllstrmLiveKit] Starting broadcast to', enabledDests.length, 'destinations');
     setBroadcastStatus('starting');
-    // TODO: Implement LiveKit egress for broadcasting
-    setTimeout(() => setBroadcastStatus('live'), 1000);
-  }, []);
+
+    try {
+      const res = await fetch('/api/egress/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId: options.roomId, destinations: enabledDests }),
+      });
+      const data = await res.json();
+
+      if (data.success || data.egressIds) {
+        egressIdsRef.current = data.egressIds || [];
+        setBroadcastStatus('live');
+        console.log('[useAllstrmLiveKit] Broadcast started, egress IDs:', egressIdsRef.current);
+
+        // Update room status to 'live' in database
+        try {
+          await ApiClient.updateRoom(options.roomId, { status: 'live' });
+        } catch (dbErr) {
+          console.error('[useAllstrmLiveKit] Failed to update room status to live:', dbErr);
+        }
+      } else {
+        setBroadcastStatus('error');
+        console.error('[useAllstrmLiveKit] Broadcast failed:', data.error);
+      }
+    } catch (e) {
+      console.error('[useAllstrmLiveKit] Broadcast start error:', e);
+      setBroadcastStatus('error');
+    }
+  }, [options.roomId, destinations]);
 
   const stopBroadcast = useCallback(async () => {
+    console.log('[useAllstrmLiveKit] Stopping broadcast, egress IDs:', egressIdsRef.current);
     setBroadcastStatus('stopping');
-    setTimeout(() => setBroadcastStatus('idle'), 1000);
-  }, []);
+
+    for (const egressId of egressIdsRef.current) {
+      try {
+        await fetch('/api/egress/stop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ egressId }),
+        });
+        console.log('[useAllstrmLiveKit] Stopped egress:', egressId);
+      } catch (e) {
+        console.error('[useAllstrmLiveKit] Stop egress error:', e);
+      }
+    }
+
+    egressIdsRef.current = [];
+    setBroadcastStatus('idle');
+
+    // Update room status to 'idle' in database
+    try {
+      await ApiClient.updateRoom(options.roomId, { status: 'idle' });
+    } catch (dbErr) {
+      console.error('[useAllstrmLiveKit] Failed to update room status to idle:', dbErr);
+    }
+  }, [options.roomId]);
 
   const addDestination = useCallback(async (d: Omit<Destination, 'id' | 'enabled' | 'status'>) => {
-    setDestinations((p) => [...p, { ...d, id: `dest-${Date.now()}`, enabled: true, status: 'idle' }]);
-  }, []);
+    const userId = options.initialConfig?.userId;
+    if (!userId) {
+      console.error('[useAllstrmLiveKit] Cannot add destination: no userId');
+      return;
+    }
+
+    try {
+      const newDest = await ApiClient.createDestination({
+        ...d,
+        user_id: userId,
+        room_id: options.roomId,
+        rtmp_url: d.url || '',
+        stream_key: d.streamKey || '',
+      });
+      setDestinations((p) => [...p, newDest]);
+    } catch (err) {
+      console.error('[useAllstrmLiveKit] Failed to add destination:', err);
+    }
+  }, [options.initialConfig?.userId, options.roomId]);
 
   const removeDestination = useCallback(async (id: string) => {
-    setDestinations((p) => p.filter((d) => d.id !== id));
+    try {
+      await ApiClient.deleteDestination(id);
+      setDestinations((p) => p.filter((d) => d.id !== id));
+    } catch (err) {
+      console.error('[useAllstrmLiveKit] Failed to remove destination:', err);
+    }
   }, []);
 
   const toggleDestination = useCallback(async (id: string, enabled?: boolean) => {
-    setDestinations((p) =>
-      p.map((d) => (d.id === id ? { ...d, enabled: enabled ?? !d.enabled } : d))
-    );
-  }, []);
+    const dest = destinations.find(d => d.id === id);
+    if (!dest) return;
+
+    const newEnabled = enabled ?? !dest.enabled;
+    try {
+      await ApiClient.toggleDestination(id, newEnabled);
+      setDestinations((p) =>
+        p.map((d) => (d.id === id ? { ...d, enabled: newEnabled } : d))
+      );
+    } catch (err) {
+      console.error('[useAllstrmLiveKit] Failed to toggle destination:', err);
+    }
+  }, [destinations]);
 
   const admitParticipant = useCallback(async (id: string) => {
-    setParticipants((p) => p.map((x) => (x.id === id ? { ...x, is_in_waiting_room: false } : x)));
+    console.log('[useAllstrmLiveKit] Admitting participant:', id);
+
+    // Add to admitted set
+    setAdmittedParticipants((prev) => new Set([...prev, id]));
+
+    // Send admission message to the participant via LiveKit data channel
+    if (roomRef.current) {
+      const room = roomRef.current;
+
+      console.log('[useAllstrmLiveKit] Room state:', {
+        localIdentity: room.localParticipant?.identity,
+        remoteParticipantCount: room.remoteParticipants.size,
+        remoteIdentities: Array.from(room.remoteParticipants.values()).map(p => p.identity),
+      });
+
+      // Find the participant by identity (remoteParticipants is a Map keyed by SID, so we need to iterate)
+      let targetParticipant: RemoteParticipant | undefined;
+      room.remoteParticipants.forEach((participant) => {
+        if (participant.identity === id) {
+          targetParticipant = participant;
+        }
+      });
+
+      if (targetParticipant) {
+        const admissionMessage = {
+          type: 'admission',
+          admitted: true,
+          admittedBy: room.localParticipant?.identity,
+          timestamp: Date.now(),
+        };
+
+        console.log('[useAllstrmLiveKit] Sending admission message:', {
+          message: admissionMessage,
+          targetIdentity: targetParticipant.identity,
+          targetSid: targetParticipant.sid,
+        });
+
+        try {
+          // Send reliable data to the specific participant
+          await room.localParticipant.publishData(
+            new TextEncoder().encode(JSON.stringify(admissionMessage)),
+            { reliable: true, destinationIdentities: [targetParticipant.identity] }
+          );
+          console.log('[useAllstrmLiveKit] Admission message sent to:', id);
+        } catch (err) {
+          console.error('[useAllstrmLiveKit] Failed to send admission message:', err);
+        }
+      } else {
+        console.warn('[useAllstrmLiveKit] Could not find participant to admit:', id, 'Available:', Array.from(room.remoteParticipants.values()).map(p => p.identity));
+      }
+    } else {
+      console.error('[useAllstrmLiveKit] No room reference available');
+    }
+
+    // NOTE: Don't call updateParticipants() here - the useEffect below handles it
+    // after admittedParticipants state actually updates
+  }, []);
+
+  // Effect to update participants when admittedParticipants changes (fixes closure issue)
+  useEffect(() => {
+    // Keep ref in sync with state to avoid stale closures
+    admittedParticipantsRef.current = admittedParticipants;
+    if (roomRef.current) {
+      updateParticipants();
+    }
+  }, [admittedParticipants, updateParticipants])
+
+  // Send data message to all participants (for stage sync, chat, etc.)
+  const sendDataMessage = useCallback(async (message: Record<string, unknown>) => {
+    if (!roomRef.current) {
+      console.warn('[useAllstrmLiveKit] Cannot send data message - no room');
+      return;
+    }
+    try {
+      await roomRef.current.localParticipant.publishData(
+        new TextEncoder().encode(JSON.stringify(message)),
+        { reliable: true }
+      );
+      console.log('[useAllstrmLiveKit] Data message sent:', message.type);
+    } catch (err) {
+      console.error('[useAllstrmLiveKit] Failed to send data message:', err);
+    }
   }, []);
 
   const startFilePresentation = useCallback(async (file: File) => {
-    console.log('[useAllstrmLiveKit] File presentation not yet implemented:', file.name);
-    // TODO: Implement file presentation via canvas -> screen share
+    console.log('[useAllstrmLiveKit] Starting file presentation:', file.name);
+
+    try {
+      // Parse the file
+      const result = await parsePresentation(file);
+
+      if (result.error || result.slides.length === 0) {
+        console.error('[useAllstrmLiveKit] Failed to parse file:', result.error);
+        setError(`Failed to parse presentation: ${result.error || 'No slides found'}`);
+        return;
+      }
+
+      console.log('[useAllstrmLiveKit] Parsed', result.totalSlides, 'slides');
+
+      // Stop any existing presentation
+      if (presentationStreamRef.current) {
+        presentationStreamRef.current.stop();
+      }
+
+      // Create new presentation stream
+      const presenter = new PresentationStream();
+      await presenter.loadSlides(result.slides);
+      presentationStreamRef.current = presenter;
+
+      // Get the stream
+      const stream = presenter.getStream();
+
+      // Update state
+      setPresentationState({
+        currentSlide: 1,
+        totalSlides: result.totalSlides,
+        isPresentingFile: true,
+      });
+
+      // Publish as screen share
+      if (roomRef.current) {
+        const room = roomRef.current;
+        const videoTrack = stream.getVideoTracks()[0];
+
+        if (videoTrack) {
+          await room.localParticipant.publishTrack(videoTrack, {
+            name: 'presentation',
+            source: Track.Source.ScreenShare,
+          });
+          setScreenStream(stream);
+          console.log('[useAllstrmLiveKit] Presentation published successfully');
+        }
+      } else {
+        // Not connected to room, just set screen stream for preview
+        setScreenStream(stream);
+      }
+
+    } catch (err) {
+      console.error('[useAllstrmLiveKit] File presentation error:', err);
+      setError(`Presentation error: ${err}`);
+    }
   }, []);
 
-  const nextSlide = useCallback(() => {
-    setPresentationState((p) => ({
-      ...p,
-      currentSlide: Math.min(p.currentSlide + 1, p.totalSlides),
-    }));
+  const stopFilePresentation = useCallback(() => {
+    if (presentationStreamRef.current) {
+      presentationStreamRef.current.stop();
+      presentationStreamRef.current = null;
+    }
+    setPresentationState({ currentSlide: 0, totalSlides: 0, isPresentingFile: false });
+    stopScreenShare();
+  }, [stopScreenShare]);
+
+  const nextSlide = useCallback(async () => {
+    if (presentationStreamRef.current) {
+      const newSlide = await presentationStreamRef.current.nextSlide();
+      setPresentationState((p) => ({ ...p, currentSlide: newSlide }));
+    }
   }, []);
 
-  const prevSlide = useCallback(() => {
-    setPresentationState((p) => ({
-      ...p,
-      currentSlide: Math.max(p.currentSlide - 1, 1),
-    }));
+  const prevSlide = useCallback(async () => {
+    if (presentationStreamRef.current) {
+      const newSlide = await presentationStreamRef.current.prevSlide();
+      setPresentationState((p) => ({ ...p, currentSlide: newSlide }));
+    }
   }, []);
 
   const setMixerLayout = useCallback((layout: 'grid' | 'speaker', focusId?: string) => {
@@ -819,10 +1503,10 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
   }, []);
 
   // Stubs for unused functions
-  const updateLayout = useCallback(async () => {}, []);
-  const prepareCamera = useCallback(async () => {}, []);
-  const switchDevice = useCallback(async () => {}, []);
-  const updateVideoConfig = useCallback(async () => {}, []);
+  const updateLayout = useCallback(async () => { }, []);
+  const prepareCamera = useCallback(async () => { }, []);
+  const switchDevice = useCallback(async () => { }, []);
+  const updateVideoConfig = useCallback(async () => { }, []);
 
   // Clean up on unmount
   useEffect(() => {
@@ -889,6 +1573,7 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
       sendChatMessage,
       admitParticipant,
       startFilePresentation,
+      stopFilePresentation,
       nextSlide,
       prevSlide,
       presentationState,
@@ -899,6 +1584,12 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
       setMixerLayout,
       updateRecordingScene,
       isLocalInWaitingRoom,
+      sendDataMessage,
+      receivedStageState,
+      stageStateVersion,
+      receivedPermissions,
+      wasKicked,
+      sessionEnded,
     }),
     [
       isConnected,
@@ -946,6 +1637,7 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
       sendChatMessage,
       admitParticipant,
       startFilePresentation,
+      stopFilePresentation,
       nextSlide,
       prevSlide,
       presentationState,
@@ -956,6 +1648,12 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
       setMixerLayout,
       updateRecordingScene,
       isLocalInWaitingRoom,
+      sendDataMessage,
+      receivedStageState,
+      stageStateVersion,
+      receivedPermissions,
+      wasKicked,
+      sessionEnded,
     ]
   );
 }

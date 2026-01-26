@@ -79,6 +79,9 @@ const ROLE_PERMISSIONS: Record<ParticipantRole, GuestAction[]> = {
     guest: [
         'TOGGLE_OWN_AUDIO', 'TOGGLE_OWN_VIDEO', 'SHARE_SCREEN', 'SEND_CHAT',
         'VIEW_PARTICIPANTS', 'VIEW_CHAT', 'RAISE_HAND'
+    ],
+    viewer: [
+        'VIEW_PARTICIPANTS', 'VIEW_CHAT'
     ]
 };
 
@@ -89,6 +92,8 @@ export interface GuestPermissionConfig {
     canShareScreen: boolean;
     canSendChat: boolean;
     canRaiseHand: boolean;
+    canAddToStage: boolean;    // Whether host can add this guest to stage
+    canRemoveSelf: boolean;    // Whether guest can remove themselves from stage (always false for guests)
 }
 
 export const DEFAULT_GUEST_PERMISSIONS: GuestPermissionConfig = {
@@ -96,8 +101,13 @@ export const DEFAULT_GUEST_PERMISSIONS: GuestPermissionConfig = {
     canToggleVideo: true,
     canShareScreen: false, // Disabled by default for guests
     canSendChat: true,
-    canRaiseHand: true
+    canRaiseHand: true,
+    canAddToStage: true,       // Host can add to stage by default
+    canRemoveSelf: false       // Guests cannot remove themselves from stage
 };
+
+// Per-guest permissions map (participantId -> permissions)
+export type PerGuestPermissions = Record<string, GuestPermissionConfig>;
 
 /**
  * Checks if a specific feature is enabled for the current subscription tier.

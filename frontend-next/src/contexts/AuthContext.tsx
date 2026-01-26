@@ -20,7 +20,7 @@ interface AuthState {
 
 interface AuthContextType extends AuthState {
     signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
-    signUp: (email: string, password: string) => Promise<{ error: Error | null }>;
+    signUp: (email: string, password: string, displayName: string) => Promise<{ error: Error | null }>;
     signOut: () => Promise<void>;
     setTier: (tier: Tier) => void;
     takeAccess: () => void;
@@ -32,7 +32,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [user, setUser] = useState<User | null>(null);
     const [session, setSession] = useState<Session | null>(null);
     const [isLoading, setIsLoading] = useState(true);
-    const [tier, setTier] = useState<Tier>(Tier.PRO); // Default to Pro for demo
+    const [tier, setTier] = useState<Tier>(Tier.FREE); // Default to Free for new users
 
     const [hasAnotherTab, setHasAnotherTab] = useState(false);
     const [wasKickedOut, setWasKickedOut] = useState(false); // Track if this tab was kicked
@@ -42,7 +42,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Single session detection via BroadcastChannel
     useEffect(() => {
         if (!user) return;
-        
+
         const channel = new BroadcastChannel('allstrm_auth_session');
         channelRef.current = channel;
 
@@ -55,9 +55,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 // Another tab is checking - respond with our status
                 // Only respond if WE are the active tab
                 if (activeTabIdRef.current === TAB_ID) {
-                    channel.postMessage({ 
-                        type: 'TAB_ACTIVE', 
-                        userId: user.id, 
+                    channel.postMessage({
+                        type: 'TAB_ACTIVE',
+                        userId: user.id,
                         tabId: TAB_ID,
                         activeTabId: activeTabIdRef.current
                     });
@@ -81,10 +81,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
 
         channel.addEventListener('message', handleMessage);
-        
+
         // On first load, try to become the active tab by checking if others exist
         console.log(`[Tab ${TAB_ID.slice(-6)}] Checking for other tabs...`);
-        
+
         // Wait a tiny bit for other tabs to potentially respond
         const checkTimeout = setTimeout(() => {
             if (!activeTabIdRef.current) {
@@ -94,7 +94,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 setHasAnotherTab(false);
             }
         }, 150);
-        
+
         channel.postMessage({ type: 'CHECK_TABS', userId: user.id, tabId: TAB_ID });
 
         return () => {
@@ -108,17 +108,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const takeAccess = useCallback(() => {
         if (!user) return;
         console.log(`[Tab ${TAB_ID.slice(-6)}] Taking access, claiming session`);
-        
+
         // Update our local state first
         activeTabIdRef.current = TAB_ID;
         setHasAnotherTab(false);
-        
+
         // Then broadcast to other tabs
         if (channelRef.current) {
-            channelRef.current.postMessage({ 
-                type: 'SESSION_CLAIMED', 
-                userId: user.id, 
-                tabId: TAB_ID 
+            channelRef.current.postMessage({
+                type: 'SESSION_CLAIMED',
+                userId: user.id,
+                tabId: TAB_ID
             });
         }
     }, [user]);
@@ -138,6 +138,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     console.log('[AuthContext] Initial session found:', currentSession.user.id);
                     setSession(currentSession);
                     setUser(currentSession.user);
+
+                    // Fetch tier for the user
+                    try {
+                        const response = await fetch(`/api/users/${currentSession.user.id}/tier`);
+                        if (response.ok) {
+                            const data = await response.json();
+                            // Map database string to Tier enum if necessary
+                            // 'free', 'creator', 'professional', 'enterprise'
+                            const dbTier = data.tier.toLowerCase();
+                            if (dbTier === 'professional' || dbTier === 'pro') setTier(Tier.PRO);
+                            else if (dbTier === 'creator') setTier(Tier.CREATOR);
+                            else if (dbTier === 'enterprise') setTier(Tier.ENTERPRISE);
+                            else setTier(Tier.FREE);
+                        }
+                    } catch (e) {
+                        console.error('[AuthContext] Failed to fetch user tier:', e);
+                        setTier(Tier.FREE);
+                    }
                 } else {
                     console.log('[AuthContext] No initial session found');
                 }
@@ -159,10 +177,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     console.log('[AuthContext] Setting session for user:', newSession.user.id);
                     setSession(newSession);
                     setUser(newSession.user);
+
+                    // Fetch tier on sign in / session change
+                    try {
+                        const response = await fetch(`/api/users/${newSession.user.id}/tier`);
+                        if (response.ok) {
+                            const data = await response.json();
+                            const dbTier = data.tier.toLowerCase();
+                            if (dbTier === 'professional' || dbTier === 'pro') setTier(Tier.PRO);
+                            else if (dbTier === 'creator') setTier(Tier.CREATOR);
+                            else if (dbTier === 'enterprise') setTier(Tier.ENTERPRISE);
+                            else setTier(Tier.FREE);
+                        }
+                    } catch (e) {
+                        console.error('[AuthContext] Failed to fetch tier on status change:', e);
+                    }
                 } else {
                     console.log('[AuthContext] Clearing session');
                     setSession(null);
                     setUser(null);
+                    setTier(Tier.FREE);
                 }
 
                 setIsLoading(false);
@@ -196,11 +230,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     }, []);
 
-    const signUp = useCallback(async (email: string, password: string) => {
+    const signUp = useCallback(async (email: string, password: string, displayName: string) => {
         try {
             const { data, error } = await supabase.auth.signUp({
                 email,
                 password,
+                options: {
+                    data: {
+                        full_name: displayName,
+                    }
+                }
             });
 
             if (error) {

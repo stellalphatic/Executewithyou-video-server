@@ -1,5 +1,6 @@
 import { AccessToken, TrackSource } from 'livekit-server-sdk';
 import { NextRequest, NextResponse } from 'next/server';
+import { checkRateLimit, getClientIP, RATE_LIMITS, rateLimitResponse } from '@/lib/rateLimit';
 
 // Validate environment variables at startup
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY;
@@ -11,6 +12,12 @@ export async function POST(
   { params }: { params: Promise<{ roomId: string }> }
 ) {
   try {
+    // Rate limiting
+    const clientIP = getClientIP(req);
+    const rateLimit = checkRateLimit(clientIP, RATE_LIMITS.token);
+    if (!rateLimit.success) {
+      return rateLimitResponse(rateLimit);
+    }
     // Validate required environment variables
     if (!LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
       console.error('[Token Route] Missing required environment variables:', {
@@ -76,6 +83,7 @@ export async function POST(
       metadata: JSON.stringify({
         role: sanitizedRole,
         isHost,
+        inWaitingRoom: sanitizedRole === 'guest', // Guests start in waiting room
         joinedAt: new Date().toISOString(),
       }),
     });
@@ -124,6 +132,8 @@ export async function POST(
         name: `Room ${sanitizedRoomId}`,
       },
       serverUrl: LIVEKIT_URL,
+    }, {
+      headers: rateLimit.headers,
     });
   } catch (error) {
     console.error('[Token Route] Unexpected error:', error);

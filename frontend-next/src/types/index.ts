@@ -9,12 +9,12 @@ export enum Tier {
   ENTERPRISE = 5  // Tier 5: Ultra / AI
 }
 
-export type BillingTier = 'free' | 'creator' | 'professional' | 'enterprise';
+export type BillingTier = 'free' | 'creator' | 'professional' | 'broadcast' | 'enterprise';
 export type RoomStatus = 'idle' | 'preparing' | 'live' | 'recording' | 'paused' | 'ending' | 'ended';
 export type ParticipantRole = 'owner' | 'host' | 'co_host' | 'guest' | 'viewer';
 export type IngestType = 'webrtc' | 'srt' | 'rtmp' | 'ndi';
 export type RecordingStatus = 'pending' | 'recording' | 'processing' | 'uploading' | 'completed' | 'failed';
-export type BroadcastStatus = 'idle' | 'starting' | 'live' | 'ending' | 'stopping';
+export type BroadcastStatus = 'idle' | 'starting' | 'live' | 'ending' | 'stopping' | 'error';
 
 // NEW: Meeting Specific Types
 export type RoomMode = 'studio' | 'meeting';
@@ -91,11 +91,15 @@ export interface Room {
   owner_id: string;
   name: string;
   status: RoomStatus;
-  mode: RoomMode; // NEW
+  mode: RoomMode;
   layout_state: LayoutState;
   audio_config: AudioConfig;
   stream_config: StreamConfig;
   metrics: RoomMetrics;
+  created_at?: string;
+  updated_at?: string;
+  description?: string;
+  thumbnail_url?: string;
 }
 
 export interface LayoutState {
@@ -305,7 +309,7 @@ export interface StudioConfiguration {
   videoDeviceId: string;
   audioDeviceId: string;
   audioOutputDeviceId?: string;
-  resolution: '1080p' | '720p' | '360p';
+  resolution: '1080p' | '720p' | '360p' | '4k';
   frameRate: number;
   visualConfig: VisualConfigType;
   mode: RoomMode; // Studio or Meeting
@@ -348,7 +352,7 @@ export interface UseAllstrmReturn {
   muteParticipant: (participantId: string) => void;
   muteAllParticipants: () => void; // NEW
   stopParticipantVideo: (participantId: string) => void; // NEW
-  startRecording: (type?: 'mixed' | 'iso') => void;
+  startRecording: (type?: 'mixed' | 'iso', stageElement?: HTMLDivElement | null) => void;
   stopRecording: (recordingId: string) => void;
   prepareCamera: () => Promise<MediaStream | null | void>;
   switchDevice: (kind: 'audio' | 'video', deviceId: string) => Promise<void>;
@@ -375,6 +379,10 @@ export interface UseAllstrmReturn {
   startFilePresentation: (file: File) => void;
   globalMuteState: boolean;
   globalVideoState: boolean;
+  // Kick notification
+  wasKicked: boolean;
+  // Session ended (host left)
+  sessionEnded: boolean;
 }
 
 // Upload Queue Types

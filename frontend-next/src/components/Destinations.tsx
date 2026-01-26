@@ -94,26 +94,75 @@ export const Destinations: React.FC<DestinationsProps> = ({
     const [isModalOpen, setIsModalOpen] = useState(mode === 'select');
 
     // Internal state for destinations when no external handlers provided (manage mode)
-    const [internalDestinations, setInternalDestinations] = useState<Destination[]>(() => {
-        // Load from localStorage on mount
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('allstrm_destinations');
-            if (saved) {
-                try {
-                    return JSON.parse(saved);
-                } catch {
-                    return [];
-                }
-            }
-        }
-        return [];
-    });
+    const [internalDestinations, setInternalDestinations] = useState<Destination[]>([]);
 
     // Use external destinations if provided, otherwise use internal
     const destinations = externalDestinations ?? internalDestinations;
 
+    // Load initial destinations
+    useEffect(() => {
+        const loadInitial = async () => {
+            if (externalDestinations) return; // Managed externally
+
+            if (userId) {
+                // If userId exists, try loading from DB
+                try {
+                    const { destinations: dbDests } = await ApiClient.listDestinations(userId);
+                    setInternalDestinations(dbDests);
+                    return;
+                } catch (e) {
+                    console.error('[Destinations] DB load failed, falling back to localStorage:', e);
+                }
+            }
+
+            // Fallback to localStorage
+            if (typeof window !== 'undefined') {
+                const saved = localStorage.getItem('allstrm_destinations');
+                if (saved) {
+                    try {
+                        setInternalDestinations(JSON.parse(saved));
+                    } catch {
+                        setInternalDestinations([]);
+                    }
+                }
+            }
+        };
+
+        loadInitial();
+    }, [userId, externalDestinations]);
+
     // Internal handlers when external not provided
     const onAddDestination = externalOnAdd ?? (async (dest: Omit<Destination, 'id' | 'enabled' | 'status'>) => {
+        if (userId && roomId) {
+            try {
+                const newDest = await ApiClient.createDestination({
+                    ...dest,
+                    user_id: userId,
+                    room_id: roomId,
+                    rtmp_url: dest.url || '',
+                    stream_key: dest.streamKey || '',
+                });
+                setInternalDestinations(prev => [...prev, newDest]);
+                return;
+            } catch (err: any) {
+                console.error('[Destinations] DB add failed:', err);
+                const errorMessage = err.message || '';
+
+                // Check if it's a tier limit error
+                if (errorMessage.includes('limit reached') || errorMessage.includes('Destination limit')) {
+                    alert(
+                        'You have reached the destination limit for your current plan.\n\n' +
+                        'Please upgrade your plan to add more streaming destinations.'
+                    );
+                    return;
+                }
+                // Continue to local fallback for other errors
+            }
+        } else if (userId && !roomId) {
+            console.warn('[Destinations] Cannot create destination without a room ID');
+        }
+
+        // Local fallback
         const newDest: Destination = {
             ...dest,
             id: `local-${Date.now()}`,
@@ -126,12 +175,34 @@ export const Destinations: React.FC<DestinationsProps> = ({
     });
 
     const onRemoveDestination = externalOnRemove ?? (async (id: string) => {
+        if (userId && !id.startsWith('local-')) {
+            try {
+                await ApiClient.deleteDestination(id);
+                setInternalDestinations(prev => prev.filter(d => d.id !== id));
+                return;
+            } catch (err) {
+                console.error('[Destinations] DB delete failed:', err);
+            }
+        }
+
         const updated = internalDestinations.filter(d => d.id !== id);
         setInternalDestinations(updated);
         localStorage.setItem('allstrm_destinations', JSON.stringify(updated));
     });
 
     const onToggleDestination = externalOnToggle ?? (async (id: string, enabled: boolean) => {
+        if (userId && !id.startsWith('local-')) {
+            try {
+                await ApiClient.toggleDestination(id, enabled);
+                setInternalDestinations(prev =>
+                    prev.map(d => d.id === id ? { ...d, enabled } : d)
+                );
+                return;
+            } catch (err) {
+                console.error('[Destinations] DB toggle failed:', err);
+            }
+        }
+
         const updated = internalDestinations.map(d =>
             d.id === id ? { ...d, enabled } : d
         );
@@ -171,10 +242,12 @@ export const Destinations: React.FC<DestinationsProps> = ({
     // Check for OAuth callback on mount
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
+        // Check for both ?oauth_success=provider (new format) and ?success=true&provider=name (old format)
+        const oauthSuccess = params.get('oauth_success');
         const success = params.get('success');
-        const provider = params.get('provider');
+        const provider = oauthSuccess || params.get('provider');
 
-        if (success === 'true' && provider) {
+        if ((oauthSuccess || success === 'true') && provider) {
             // OAuth completed successfully, refresh connections
             console.log(`[Destinations] OAuth completed for ${provider}`);
             fetchOAuthData();
@@ -252,12 +325,12 @@ export const Destinations: React.FC<DestinationsProps> = ({
 
     // Add destination from OAuth connection
     const handleAddFromConnection = async (connection: OAuthConnection) => {
-        if (!roomId || !onAddDestination) return;
+        if (!roomId || !onAddDestination || !userId) return;
 
         setAddingDestination(true);
         try {
             // Get stream destination info from OAuth connection
-            const streamInfo = await ApiClient.getStreamDestinationFromOAuth(connection.id);
+            const streamInfo = await ApiClient.getStreamDestinationFromOAuth(connection.id, userId);
 
             await onAddDestination({
                 platform: streamInfo.provider,
@@ -326,8 +399,8 @@ export const Destinations: React.FC<DestinationsProps> = ({
 
     return (
         <div className="flex-1 flex flex-col h-full relative animate-fade-in bg-app-bg">
-             {/* Only show main dashboard content if NOT in select mode */}
-             {mode !== 'select' && (
+            {/* Only show main dashboard content if NOT in select mode */}
+            {mode !== 'select' && (
                 <>
                     {/* Header */}
                     <header className="h-20 border-b border-app-border/60 flex items-center justify-between px-10 bg-app-bg/80 backdrop-blur-xl z-10 transition-opacity duration-300">
@@ -344,7 +417,7 @@ export const Destinations: React.FC<DestinationsProps> = ({
 
                     {/* Content */}
                     <div className="flex-1 flex flex-col p-10 overflow-hidden">
-                        
+
                         {destinations.length === 0 ? (
                             /* Empty State Content */
                             <div className="flex-1 flex flex-col items-center justify-center">
@@ -358,7 +431,7 @@ export const Destinations: React.FC<DestinationsProps> = ({
                                             <Plus className="w-5 h-5 text-content-medium" />
                                         </div>
                                     </div>
-                                    
+
                                     <h2 className="text-xl font-bold text-content-high mb-3">
                                         No destinations added
                                     </h2>
@@ -396,21 +469,21 @@ export const Destinations: React.FC<DestinationsProps> = ({
                                                     </div>
                                                 </div>
                                             </div>
-                                            
+
                                             <div className="flex items-center gap-6">
                                                 <StatusBadge status={dest.status} health={dest.health} />
-                                                
+
                                                 <div className="h-6 w-px bg-app-border" />
-                                                
+
                                                 <div className="flex items-center gap-2">
-                                                    <button 
+                                                    <button
                                                         onClick={() => onToggleDestination?.(dest.id, !dest.enabled)}
                                                         className={`transition-colors p-1 ${dest.enabled ? 'text-indigo-500' : 'text-content-medium hover:text-content-high'}`}
                                                         title={dest.enabled ? "Disable" : "Enable"}
                                                     >
                                                         {dest.enabled ? <ToggleRight className="w-8 h-8" /> : <ToggleLeft className="w-8 h-8" />}
                                                     </button>
-                                                    <button 
+                                                    <button
                                                         onClick={() => onRemoveDestination?.(dest.id)}
                                                         className="p-2 text-content-medium hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
                                                     >
@@ -422,23 +495,23 @@ export const Destinations: React.FC<DestinationsProps> = ({
                                     );
                                 })}
                                 <div className="pt-4 flex justify-center">
-                                    <Button onClick={() => setIsModalOpen(true)} variant="secondary" icon={<Plus className="w-4 h-4"/>}>Add another destination</Button>
+                                    <Button onClick={() => setIsModalOpen(true)} variant="secondary" icon={<Plus className="w-4 h-4" />}>Add another destination</Button>
                                 </div>
                             </div>
                         )}
                     </div>
                 </>
-             )}
+            )}
 
             {/* Add Destination Modal */}
             {isModalOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                     {/* Backdrop */}
                     <div className="absolute inset-0 bg-black/60 backdrop-blur-md animate-blur-in" onClick={mode !== 'select' ? handleClose : undefined} />
-                    
+
                     {/* Modal Content */}
                     <div className="relative w-full max-w-4xl bg-app-bg border border-app-border rounded-2xl shadow-2xl overflow-hidden animate-scale-in flex flex-col max-h-[90vh]">
-                        
+
                         {/* Modal Header */}
                         <div className="flex items-center justify-between px-6 py-5 border-b border-app-border bg-app-surface/30">
                             <h2 className="text-lg font-bold text-content-high">Add destination</h2>

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { AuthProvider } from '@/contexts/AuthContext';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Moon, Sun } from 'lucide-react';
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -23,9 +24,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
     };
 
     return (
-        <AuthProvider>
-            <div className="font-sans text-content-high bg-app-bg transition-colors duration-300 min-h-screen">
-                {children}
+        <ErrorBoundary>
+            <AuthProvider>
+                <div className="font-sans text-content-high bg-app-bg transition-colors duration-300 min-h-screen">
+                    {children}
 
                 {/* Global Theme Toggle */}
                 <div className="fixed bottom-6 right-6 z-[100] animate-slide-up" style={{ animationDelay: '0.5s' }}>
@@ -39,5 +41,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
                 </div>
             </div>
         </AuthProvider>
+        </ErrorBoundary>
     );
 }

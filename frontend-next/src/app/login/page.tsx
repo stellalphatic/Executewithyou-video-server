@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { ArrowRight, Scissors } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ArrowRight, Scissors, Loader2 } from 'lucide-react';
 import { Button } from '@/components/Button';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
@@ -9,11 +9,36 @@ import Link from 'next/link';
 
 export default function LoginPage() {
     const router = useRouter();
-    const { signIn } = useAuth();
+    const { signIn, isAuthenticated, isLoading: authLoading } = useAuth();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    // Redirect to dashboard if already authenticated
+    useEffect(() => {
+        if (!authLoading && isAuthenticated) {
+            router.replace('/dashboard');
+        }
+    }, [authLoading, isAuthenticated, router]);
+
+    // Show loading while checking auth
+    if (authLoading) {
+        return (
+            <div className="min-h-screen bg-app-bg flex items-center justify-center">
+                <Loader2 className="w-8 h-8 text-app-accent animate-spin" />
+            </div>
+        );
+    }
+
+    // If authenticated, show redirecting state
+    if (isAuthenticated) {
+        return (
+            <div className="min-h-screen bg-app-bg flex items-center justify-center">
+                <Loader2 className="w-8 h-8 text-app-accent animate-spin" />
+            </div>
+        );
+    }
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();

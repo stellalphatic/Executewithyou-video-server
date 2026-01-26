@@ -1,120 +1,156 @@
-<!-- .endpoint_url("https://<account>.r2.cloudflarestorage.com")
-<!-- .force_path_style(true) --> 
-<!-- use this else it will break the r2/s3 -->
+# AllStrm Documentation
 
+## Overview
 
-# ALLSTRM Documentation
+AllStrm is a professional live streaming and video meeting platform built on **LiveKit** + **Supabase**.
 
-Welcome to the ALLSTRM streaming platform documentation.
+**Current Status**: Phase 1 Complete ✅
+
+---
 
 ## Quick Links
 
 | Document | Description |
 |----------|-------------|
-| [Frontend-Backend Wiring](FRONTEND_BACKEND_WIRING.md) | How to connect React frontend to Rust backend |
-| [Implementation Tasks](IMPLEMENTATION_TASKS.md) | Checklist for completing frontend integration |
-| [API Reference](api/README.md) | REST and WebSocket API documentation |
-| [Hybrid Deployment](deployment/HYBRID_DEPLOYMENT.md) | How to deploy ALLSTRM in hybrid mode |
-| [Architecture Diagrams](architecture/DIAGRAMS.md) | PlantUML architecture diagrams |
+| [Architecture](ARCHITECTURE.md) | System architecture & technology stack |
+| [Phase 1 Status](PHASE1_STATUS.md) | Implementation progress (100% complete) |
+| [Profit Strategy](PROFIT_STRATEGY.md) | Monetization & Phase 2 roadmap |
+| [API Reference](api/README.md) | API endpoints & data messages |
+| [Diagrams](architecture/DIAGRAMS.md) | Visual architecture diagrams |
+| [Deployment](deployment/DEPLOYMENT.md) | Deployment guide |
+
+---
 
 ## Project Structure
 
 ```
 allstrm-backend/
-├── services/
-│   ├── gateway/     # API Gateway (port 8080)
-│   ├── core/        # Room & User Management (port 8081)
-│   ├── sfu/         # WebRTC SFU (port 8082)
-│   ├── stream/      # FFmpeg/RTMP/HLS (port 8083)
-│   ├── storage/     # R2/S3 Storage (port 8084)
-│   ├── protocol/    # Shared protocol types
-│   └── common/      # Shared utilities
-├── migrations/      # Database migrations
-├── docs/            # Documentation
-│   ├── deployment/  # Deployment guides
-│   ├── api/         # API documentation
-│   ├── architecture/# Architecture diagrams
-│   └── archive/     # Old documentation
-└── Makefile         # Development commands
+├── frontend-next/           # Next.js 14 frontend
+│   ├── src/
+│   │   ├── app/             # Pages (dashboard, studio, meeting, login)
+│   │   ├── components/      # React components (Studio, Meeting, etc.)
+│   │   ├── hooks/           # useAllstrmLiveKit, useStudioEngines
+│   │   ├── contexts/        # AuthContext
+│   │   └── utils/           # Permissions, video processing
+│   └── public/              # Static assets
+├── docs/                    # Documentation (you are here)
+│   ├── api/                 # API reference
+│   ├── architecture/        # Diagrams
+│   ├── deployment/          # Deployment guides
+│   └── archive/             # Old Rust-based docs
+├── archive/                 # Archived Rust microservices
+│   └── rust-backend-v1/
+├── supabase/                # Supabase configuration
+├── migrations/              # Database migrations
+├── docker-compose.yml       # LiveKit stack
+├── livekit.yaml             # LiveKit server config
+└── egress.yaml              # Egress service config
 ```
+
+---
 
 ## Getting Started
 
 ### Prerequisites
 
-- Rust 1.75+
-- PostgreSQL 15+
-- Redis 7+
-- FFmpeg 6+ (for Stream service)
-- Docker (optional)
+- Node.js 18+
+- Docker & Docker Compose
+- Supabase CLI
 
 ### Quick Start
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-org/allstrm-backend.git
-cd allstrm-backend
+# 1. Start LiveKit stack
+docker compose up -d
 
-# Copy environment file
-cp .env.example .env
+# 2. Start Supabase
+supabase start
 
-# Start all services (Frontend + Backend + DB)
-make dev
+# 3. Start frontend
+cd frontend-next
+npm install
+npm run dev
 ```
 
-## Service Ports
+### Development Ports
 
-| Service | Port | Protocol |
-|---------|------|----------|
-| Gateway | 8080 | HTTP/WS |
-| Core | 8081 | HTTP |
-| SFU | 8082 | HTTP/WebRTC |
-| Stream | 8083 | HTTP/RTMP |
-| Storage | 8084 | HTTP |
+| Service | Port | Purpose |
+|---------|------|---------|
+| Next.js | 3000 | Frontend |
+| LiveKit | 7880 | WebRTC signaling |
+| Supabase | 54321 | Auth, DB, Storage |
+| MinIO | 9000/9001 | S3-compatible storage |
+| Redis | 6379 | LiveKit state |
 
-## Architecture Overview
+---
 
-ALLSTRM uses a distributed architecture (Single Database Pattern):
+## Key Features (Phase 1 Complete)
 
+### Studio
+- ✅ Video/audio device management
+- ✅ Multiple layout presets (solo, split, PiP, grid)
+- ✅ Drag-and-drop stage management
+- ✅ Custom zoom/pan per video feed
+- ✅ Branding (logo, background, overlays)
+
+### Presentation Pinning
+- ✅ Pin presentation to fullscreen
+- ✅ Zoom controls (1x - 3x)
+- ✅ Drag-to-pan functionality
+- ✅ Floating PiP for other participants
+
+### Guest Management
+- ✅ Waiting room with host admission
+- ✅ Per-guest permissions (audio/video/screen/chat)
+- ✅ Kick with notification
+- ✅ Host-authoritative stage sync
+
+### Going Live (RTMP)
+- ✅ Multi-destination streaming (YouTube, Twitch, etc.)
+- ✅ Stream health panel (Creator+)
+- ✅ Hot switch per destination
+- ✅ Metrics for nerds (Pro+)
+
+### Recording
+- ✅ WYSIWYG recording via canvas compositing
+- ✅ 1920x1080 output
+- ✅ WebM download
+
+---
+
+## Environment Variables
+
+```env
+# LiveKit
+NEXT_PUBLIC_LIVEKIT_URL=ws://localhost:7880
+LIVEKIT_API_KEY=devkey
+LIVEKIT_API_SECRET=devsecret
+
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<from-supabase-start>
 ```
-                    ┌─────────────┐
-                    │   Clients   │
-                    └──────┬──────┘
-                           │
-                    ┌──────▼──────┐
-                    │   Gateway   │ ← Auth, Rate Limit, Routing
-                    └──────┬──────┘
-           ┌───────────────┼───────────────┐
-           │               │               │
-    ┌──────▼──────┐ ┌──────▼──────┐ ┌──────▼──────┐
-    │    Core     │ │     SFU     │ │   Storage   │
-    │  (Rooms)    │ │  (WebRTC)   │ │ (R2/S3)     │
-    └──────┬──────┘ └──────┬──────┘ └─────────────┘
-           │               │
-           │        ┌──────▼──────┐
-           │        │   Stream    │
-           │        │  (FFmpeg)   │
-           │        └─────────────┘
-           │
-    ┌──────▼──────┐
-    │ PostgreSQL  │
-    └─────────────┘
-```
 
-## Development Commands
+---
 
-```bash
-make help        # Show all commands
-make dev         # Run all services
-make build       # Build release
-make test        # Run tests
-make db-migrate  # Run migrations
-make db-reset    # Reset database
-make docker-up   # Start PostgreSQL/Redis
-```
+## Architecture Migration
 
-## Additional Resources
+We migrated from custom Rust microservices to LiveKit + Supabase for:
+- **90% reduction** in backend code maintenance
+- **Faster time-to-market** (months → weeks)
+- **Battle-tested infrastructure** (WebRTC, scaling, egress)
+- **Lower operational cost** (managed services)
 
-- [Database Schema](../DATABASE.md) - Database setup and migration guide
-- [Architecture](../ARCHITECTURE.md) - High-level architecture document
-- [Archive](archive/) - Historical documentation
+Old documentation preserved in `docs/archive/` and `archive/rust-backend-v1/`.
+
+---
+
+## Phase 2 Roadmap
+
+See [PROFIT_STRATEGY.md](PROFIT_STRATEGY.md) for full details:
+
+1. Stripe billing integration
+2. Usage metering & analytics
+3. Cloud recording via Egress API
+4. ISO track recording
+5. Advanced guest management

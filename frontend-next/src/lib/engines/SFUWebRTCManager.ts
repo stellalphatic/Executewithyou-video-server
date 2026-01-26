@@ -115,8 +115,8 @@ export class SFUWebRTCManager {
         console.log('[SFUWebRTCManager] Join successful:', response);
 
         // Store ICE servers from response
-        if (response.iceServers?.length) {
-            this.iceServers = response.iceServers;
+        if (response.ice_servers?.length) {
+            this.iceServers = response.ice_servers;
         }
 
         // Create peer connection to SFU

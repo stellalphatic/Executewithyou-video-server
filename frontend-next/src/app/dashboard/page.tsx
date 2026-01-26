@@ -13,24 +13,28 @@ import { Members } from '@/components/Members';
 import { TeamSettings } from '@/components/TeamSettings';
 import { AccountSettings } from '@/components/AccountSettings';
 import { StudioSetup } from '@/components/StudioSetup';
-import { RoomMode, VisualConfigType } from '@/types';
+import { Projects } from '@/components/Projects';
+import { RoomMode, VisualConfigType, Tier } from '@/types';
 import { Button } from '@/components/Button';
 import { supabase } from '@/lib/constants';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { ApiClient } from '@/lib/api';
 import Link from 'next/link';
 
-type DashboardView = 'overview' | 'library' | 'destinations' | 'team' | 'settings' | 'pricing' | 'profile';
+type DashboardView = 'overview' | 'projects' | 'library' | 'destinations' | 'team' | 'settings' | 'pricing' | 'profile';
 
 export default function DashboardPage() {
     const router = useRouter();
-    const { signOut, isAuthenticated, isLoading, hasAnotherTab, canTakeAccess, takeAccess, user } = useAuth();
+    const { signOut, isAuthenticated, isLoading, hasAnotherTab, canTakeAccess, takeAccess, user, tier } = useAuth();
     const displayName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'User';
     const initials = displayName.split(' ').map((n: string) => n[0]).join('').toUpperCase().substring(0, 2);
+    const canManageTeam = tier >= Tier.CREATOR; // CREATOR and above can manage team
 
     const [currentView, setCurrentView] = useState<DashboardView>('overview');
     const [createModalOpen, setCreateModalOpen] = useState(false);
     const [setupMode, setSetupMode] = useState<RoomMode | null>(null);
+    const [setupRoomId, setSetupRoomId] = useState<string | null>(null);
     const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
     const [userId, setUserId] = useState<string | undefined>(undefined);
 
@@ -41,12 +45,13 @@ export default function DashboardPage() {
     // Redirect if not authenticated
     useEffect(() => {
         if (!isLoading && !isAuthenticated) {
-            router.push('/login');
+            router.replace('/login');
         }
     }, [isAuthenticated, isLoading, router]);
 
     // Fetch user ID from Supabase auth
     useEffect(() => {
+        if (!isAuthenticated) return;
         const fetchUser = async () => {
             try {
                 const { data: { user } } = await supabase.auth.getUser();
@@ -58,7 +63,7 @@ export default function DashboardPage() {
             }
         };
         fetchUser();
-    }, []);
+    }, [isAuthenticated]);
 
     // Close profile menu on outside click
     useEffect(() => {
@@ -70,6 +75,18 @@ export default function DashboardPage() {
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
+    // Show loading state while checking auth or if not authenticated - AFTER ALL HOOKS
+    if (isLoading || !isAuthenticated) {
+        return (
+            <div className="min-h-screen bg-app-bg flex items-center justify-center">
+                <div className="flex flex-col items-center gap-4">
+                    <div className="w-10 h-10 border-2 border-app-accent border-t-transparent rounded-full animate-spin" />
+                    <p className="text-content-medium text-sm">Loading...</p>
+                </div>
+            </div>
+        );
+    }
 
     // Navigation Handler
     const handleNavigate = (view: DashboardView) => {
@@ -94,9 +111,29 @@ export default function DashboardPage() {
         }
     };
 
+    const handleCreateRoom = async (mode: RoomMode) => {
+        if (!userId) return;
+
+        try {
+            const newRoom = await ApiClient.createRoom({
+                owner_id: userId,
+                name: mode === 'studio' ? 'New Studio Session' : 'New Meeting',
+                mode: mode,
+            });
+
+            setCreateModalOpen(false);
+            setSetupRoomId(newRoom.id);
+            setSetupMode(mode);
+        } catch (e) {
+            console.error('[Dashboard] Failed to create room:', e);
+            alert('Failed to create room. Please try again.');
+        }
+    };
+
     // Render Sub-Components
     const renderContent = () => {
         switch (currentView) {
+            case 'projects': return <Projects onSelectProject={(id) => console.log('Selected Project:', id)} />;
             case 'library': return <Library onEditAsset={() => { }} />;
             case 'destinations': return <Destinations userId={userId} />;
             case 'team': return <Members />;
@@ -119,7 +156,7 @@ export default function DashboardPage() {
                             {canTakeAccess ? 'Dashboard Open Elsewhere' : 'Session Moved'}
                         </h1>
                         <p className="text-gray-400 font-sans leading-relaxed">
-                            {canTakeAccess 
+                            {canTakeAccess
                                 ? 'Your dashboard is active in another tab. To use it here, you\'ll need to claim the session.'
                                 : 'This session is now active in another tab. Please use that tab or close this one.'}
                         </p>
@@ -148,9 +185,9 @@ export default function DashboardPage() {
         );
     }
 
-    if (setupMode) {
+    if (setupMode && setupRoomId) {
         return <StudioSetup
-            onEnterStudio={(name, cam, mic, vConfig, resolution, frameRate, recordingConfig) => handleNavigateToStudio(`room-${Date.now()}`, name, setupMode, vConfig)}
+            onEnterStudio={(name, cam, mic, vConfig, resolution, frameRate, recordingConfig) => handleNavigateToStudio(setupRoomId, name, setupMode, vConfig)}
             defaultName="Host"
             isMeeting={setupMode === 'meeting'}
         />;
@@ -170,7 +207,8 @@ export default function DashboardPage() {
 
                 <div className="flex-1 flex flex-col gap-1 px-3">
                     <NavButton icon={<LayoutGrid />} label="Overview" active={currentView === 'overview'} onClick={() => handleNavigate('overview')} />
-                    <NavButton icon={<FolderOpen />} label="Library" active={currentView === 'library'} onClick={() => handleNavigate('library')} />
+                    <NavButton icon={<FolderOpen />} label="Projects" active={currentView === 'projects'} onClick={() => handleNavigate('projects')} />
+                    <NavButton icon={<Plus />} label="Library" active={currentView === 'library'} onClick={() => handleNavigate('library')} />
                     <NavButton icon={<Share2 />} label="Destinations" active={currentView === 'destinations'} onClick={() => handleNavigate('destinations')} />
                 </div>
 
@@ -196,19 +234,21 @@ export default function DashboardPage() {
                             <div className="h-px bg-app-border mx-2" />
 
                             <div className="p-1">
-                                <button
-                                    onClick={() => handleNavigate('team')}
-                                    className="w-full flex items-center gap-3 px-3 py-2 text-sm text-content-medium hover:text-content-high hover:bg-app-surface rounded-lg transition-colors"
-                                >
-                                    <Users className="w-4 h-4" />
-                                    <span>Team Members</span>
-                                </button>
+                                {canManageTeam && (
+                                    <button
+                                        onClick={() => handleNavigate('team')}
+                                        className="w-full flex items-center gap-3 px-3 py-2 text-sm text-content-medium hover:text-content-high hover:bg-app-surface rounded-lg transition-colors"
+                                    >
+                                        <Users className="w-4 h-4" />
+                                        <span>Team Members</span>
+                                    </button>
+                                )}
                                 <button
                                     onClick={() => handleNavigate('settings')}
                                     className="w-full flex items-center gap-3 px-3 py-2 text-sm text-content-medium hover:text-content-high hover:bg-app-surface rounded-lg transition-colors"
                                 >
                                     <Settings className="w-4 h-4" />
-                                    <span>Team Settings</span>
+                                    <span>{canManageTeam ? 'Team Settings' : 'Settings'}</span>
                                 </button>
                             </div>
 
@@ -269,21 +309,21 @@ export default function DashboardPage() {
                                 title="Live Broadcast"
                                 desc="Stream to multiple platforms simultaneously with low latency."
                                 icon={<Radio className="w-8 h-8 text-indigo-500" />}
-                                onClick={() => setSetupMode('studio')}
+                                onClick={() => handleCreateRoom('studio')}
                                 accent="indigo"
                             />
                             <ProjectCard
                                 title="Local Recording"
                                 desc="High-quality ISO capture for post-production workflows."
                                 icon={<Disc className="w-8 h-8 text-rose-500" />}
-                                onClick={() => setSetupMode('studio')}
+                                onClick={() => handleCreateRoom('studio')}
                                 accent="rose"
                             />
                             <ProjectCard
                                 title="Video Meeting"
                                 desc="Private, secure conference with low latency mesh networking."
                                 icon={<VideoIcon className="w-8 h-8 text-emerald-500" />}
-                                onClick={() => setSetupMode('meeting')}
+                                onClick={() => handleCreateRoom('meeting')}
                                 accent="emerald"
                             />
                         </div>

@@ -9,7 +9,7 @@ import {
     Download, AlertCircle, CheckCircle2, MoreVertical, PinOff,
     ChevronUp, Pause, Play, Link as LinkIcon, Check, Unlock,
     Settings, Upload, ImageIcon, Monitor, ChevronLeft, ChevronRight,
-    Minimize, Move, StopCircle as StopIcon, Trash2
+    Minimize, Move, StopCircle as StopIcon, Trash2, Lock as LockIcon
 } from 'lucide-react';
 import { useAllstrm } from '@/hooks/useAllstrm';
 import { StudioConfiguration, MeetingLayout, VisualConfigType } from '@/types';
@@ -33,19 +33,22 @@ const SettingsToggle = ({ label, checked, onChange }: { label: string, checked: 
     </div>
 );
 
-const ControlButton = ({ icon, label, active, danger, accent, badge, onClick, className }: any) => (
+const ControlButton = ({ icon, label, active, danger, accent, badge, onClick, className, locked, lockedMessage }: any) => (
     <div className="relative group">
         <button
-            onClick={onClick}
+            onClick={!locked ? onClick : undefined}
+            disabled={locked}
             className={`
                 w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-200 border relative
-                ${active
-                    ? danger
-                        ? 'bg-red-500 text-white border-red-600 hover:bg-red-600 shadow-lg shadow-red-900/20'
-                        : accent === 'green'
-                            ? 'bg-emerald-600 text-white border-emerald-500 hover:bg-emerald-500 shadow-lg shadow-emerald-900/20'
-                            : 'bg-indigo-600 text-white border-indigo-500 hover:bg-indigo-500 shadow-lg shadow-indigo-900/20'
-                    : 'bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700 hover:text-white hover:border-gray-600'
+                ${locked
+                    ? 'bg-gray-800 text-gray-500 border-gray-700 cursor-not-allowed opacity-60'
+                    : active
+                        ? danger
+                            ? 'bg-red-500 text-white border-red-600 hover:bg-red-600 shadow-lg shadow-red-900/20'
+                            : accent === 'green'
+                                ? 'bg-emerald-600 text-white border-emerald-500 hover:bg-emerald-500 shadow-lg shadow-emerald-900/20'
+                                : 'bg-indigo-600 text-white border-indigo-500 hover:bg-indigo-500 shadow-lg shadow-indigo-900/20'
+                        : 'bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700 hover:text-white hover:border-gray-600'
                 }
                 ${className || ''}
             `}
@@ -56,9 +59,10 @@ const ControlButton = ({ icon, label, active, danger, accent, badge, onClick, cl
                     {badge}
                 </span>
             )}
+            {locked && <LockIcon className="w-3.5 h-3.5 absolute -top-1 -right-1 text-amber-500 bg-gray-900 rounded-full p-0.5 border border-amber-500/30" />}
         </button>
         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 px-2 py-1 bg-gray-900 text-white text-xs font-medium rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none border border-gray-800 shadow-xl z-50">
-            {label}
+            {locked ? (lockedMessage || 'Restricted by host') : label}
         </div>
     </div>
 );
@@ -108,6 +112,17 @@ export const Meeting: React.FC<MeetingProps> = ({ config, onLeave }) => {
     // Sync UI audio/video state with config/init
     const [audioEnabled, setAudioEnabled] = useState(config.audioEnabled);
     const [videoEnabled, setVideoEnabled] = useState(config.videoEnabled);
+    
+    // Determine if current user is host
+    const isHost = config.role === 'host' || config.role === 'co_host' || config.role === 'owner';
+    
+    // Permission state for guests (default all allowed, host can restrict later)
+    const [myPermissions, setMyPermissions] = useState({
+        canToggleAudio: true,
+        canToggleVideo: true,
+        canShareScreen: true,
+        canChat: true
+    });
 
     // 3. Additional Local States
     const [meetingDuration, setMeetingDuration] = useState(0);
@@ -344,8 +359,24 @@ export const Meeting: React.FC<MeetingProps> = ({ config, onLeave }) => {
                             <span className="text-[9px] font-medium uppercase tracking-wider">{ui.bottomBarDocked ? 'Docked' : 'Auto-Hide'}</span>
                         </button>
                         <div className="flex items-center gap-2">
-                            <ControlButton icon={audioEnabled ? <Mic /> : <MicOff />} label={audioEnabled ? "Mute" : "Unmute"} active={!audioEnabled} onClick={handleToggleAudio} danger={!audioEnabled} />
-                            <ControlButton icon={videoEnabled ? <Video /> : <VideoOff />} label={videoEnabled ? "Stop" : "Start"} active={!videoEnabled} onClick={handleToggleVideo} danger={!videoEnabled} />
+                            <ControlButton 
+                                icon={audioEnabled ? <Mic /> : <MicOff />} 
+                                label={audioEnabled ? "Mute" : "Unmute"} 
+                                active={!audioEnabled} 
+                                onClick={handleToggleAudio} 
+                                danger={!audioEnabled}
+                                locked={!isHost && !myPermissions.canToggleAudio}
+                                lockedMessage="Audio restricted by host"
+                            />
+                            <ControlButton 
+                                icon={videoEnabled ? <Video /> : <VideoOff />} 
+                                label={videoEnabled ? "Stop" : "Start"} 
+                                active={!videoEnabled} 
+                                onClick={handleToggleVideo} 
+                                danger={!videoEnabled}
+                                locked={!isHost && !myPermissions.canToggleVideo}
+                                lockedMessage="Camera restricted by host"
+                            />
                         </div>
                         <div className="h-8 w-px bg-gray-700" />
                         <div className="flex items-center gap-2">

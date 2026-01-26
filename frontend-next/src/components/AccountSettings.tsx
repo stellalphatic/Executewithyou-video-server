@@ -1,19 +1,33 @@
 'use client';
 
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Edit2, Trash2, Mail, Globe, Clock, ShieldAlert, Camera, Save } from 'lucide-react';
 import { Button } from './Button';
+import { useAuth } from '@/contexts/AuthContext';
 
 export const AccountSettings: React.FC = () => {
-    // Mock user data
+    const { user } = useAuth();
+
+    // Profile state initialized from authenticated user
     const [profile, setProfile] = useState({
-        name: 'John Doe',
-        email: '2024cs37@student.uet.edu.pk',
+        name: '',
+        email: '',
         language: 'English',
-        timezone: 'UTC-5'
+        timezone: 'UTC+0'
     });
     const [isSaving, setIsSaving] = useState(false);
+
+    // Sync profile state with authenticated user
+    useEffect(() => {
+        if (user) {
+            setProfile(prev => ({
+                ...prev,
+                name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'User',
+                email: user.email || ''
+            }));
+        }
+    }, [user]);
 
     const handleSave = () => {
         setIsSaving(true);

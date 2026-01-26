@@ -17,7 +17,9 @@ interface GreenRoomProps {
     onAdmitParticipant?: (participantId: string) => void; // Admit from waiting room
     onContextMenu?: (e: React.MouseEvent, participantId: string) => void;
     localStream: MediaStream | null;
+    remoteStreams?: Record<string, MediaStream>; // Remote participant streams for preview
     isLocalOnStage?: boolean; // New prop
+    isHost?: boolean; // Is current user a host
 }
 
 const GreenRoomVideo = ({ stream, isLocal }: { stream: MediaStream | null, isLocal?: boolean }) => {
@@ -58,12 +60,14 @@ export const GreenRoom: React.FC<GreenRoomProps> = ({
     waitingParticipants = [],
     localParticipantId, 
     localStream,
+    remoteStreams = {},
     onToggleAudio,
     onToggleVideo,
     onAddToStage,
     onAdmitParticipant,
     onContextMenu,
-    isLocalOnStage = false
+    isLocalOnStage = false,
+    isHost = true
 }) => {
     // In a real app, token would come from auth context
     const { isReady, cueState, toggleReady } = useBackstage(localParticipantId, "mock-token");
@@ -86,7 +90,7 @@ export const GreenRoom: React.FC<GreenRoomProps> = ({
                 {!isLocalOnStage && (
                     <div 
                         className="bg-app-bg border border-indigo-500/30 rounded-lg overflow-hidden shadow-sm group relative"
-                        onContextMenu={(e) => onContextMenu?.(e, 'local')}
+                        onContextMenu={(e) => isHost && onContextMenu?.(e, 'local')}
                     >
                         {/* Video Area */}
                         <div className="aspect-video bg-black relative">
@@ -95,18 +99,20 @@ export const GreenRoom: React.FC<GreenRoomProps> = ({
                                 You
                             </div>
 
-                            {/* Local Add To Stage Overlay */}
-                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[1px] z-20">
-                                {onAddToStage && (
-                                    <button 
-                                        onClick={() => onAddToStage('local')}
-                                        className="flex items-center gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold shadow-lg transform scale-95 group-hover:scale-100 transition-transform"
-                                    >
-                                        <MonitorUp className="w-3 h-3" />
-                                        ADD TO STAGE
-                                    </button>
-                                )}
-                            </div>
+                            {/* Local Add To Stage Overlay - Only for hosts */}
+                            {isHost && (
+                                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[1px] z-20">
+                                    {onAddToStage && (
+                                        <button 
+                                            onClick={() => onAddToStage('local')}
+                                            className="flex items-center gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold shadow-lg transform scale-95 group-hover:scale-100 transition-transform"
+                                        >
+                                            <MonitorUp className="w-3 h-3" />
+                                            ADD TO STAGE
+                                        </button>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         {/* Controls Area */}
@@ -145,11 +151,13 @@ export const GreenRoom: React.FC<GreenRoomProps> = ({
                     <div 
                         key={p.id} 
                         className="bg-app-bg border border-app-border rounded-lg overflow-hidden shadow-sm group relative opacity-90 hover:opacity-100 transition-all hover:border-content-medium/30"
-                        onContextMenu={(e) => onContextMenu?.(e, p.id)}
+                        onContextMenu={(e) => isHost && onContextMenu?.(e, p.id)}
                     >
                         <div className="aspect-video bg-black relative">
-                            {p.media_state.video_enabled ? (
-                                // Placeholder for remote stream rendering - In real app, pass remote stream here
+                            {remoteStreams[p.id] ? (
+                                <GreenRoomVideo stream={remoteStreams[p.id]} isLocal={false} />
+                            ) : p.media_state.video_enabled ? (
+                                // Placeholder for remote stream rendering when video enabled but no stream yet
                                 <div className="w-full h-full bg-gray-900 flex items-center justify-center relative overflow-hidden">
                                      <div className="absolute inset-0 opacity-20 bg-noise"></div>
                                      <div className="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center text-xs font-bold text-white relative z-10">
@@ -171,18 +179,20 @@ export const GreenRoom: React.FC<GreenRoomProps> = ({
                                 </div>
                             </div>
 
-                            {/* Hover Overlay Action */}
-                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[1px] z-20">
-                                {onAddToStage && (
-                                    <button 
-                                        onClick={() => onAddToStage(p.id)}
-                                        className="flex items-center gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold shadow-lg transform scale-95 group-hover:scale-100 transition-transform"
-                                    >
-                                        <MonitorUp className="w-3 h-3" />
-                                        ADD TO STAGE
-                                    </button>
-                                )}
-                            </div>
+                            {/* Hover Overlay Action - Only for hosts */}
+                            {isHost && (
+                                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[1px] z-20">
+                                    {onAddToStage && (
+                                        <button 
+                                            onClick={() => onAddToStage(p.id)}
+                                            className="flex items-center gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold shadow-lg transform scale-95 group-hover:scale-100 transition-transform"
+                                        >
+                                            <MonitorUp className="w-3 h-3" />
+                                            ADD TO STAGE
+                                        </button>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         <div className="p-2 flex items-center justify-between bg-app-surface border-t border-app-border">
@@ -198,8 +208,8 @@ export const GreenRoom: React.FC<GreenRoomProps> = ({
                     </div>
                 )}
 
-                {/* Waiting Room Section */}
-                {waitingParticipants.length > 0 && (
+                {/* Waiting Room Section - Only visible to hosts */}
+                {isHost && waitingParticipants.length > 0 && (
                     <>
                         <div className="h-px bg-app-border w-full my-4" />
                         <div className="flex items-center gap-2 mb-3">
@@ -216,12 +226,16 @@ export const GreenRoom: React.FC<GreenRoomProps> = ({
                                 onContextMenu={(e) => onContextMenu?.(e, p.id)}
                             >
                                 <div className="aspect-video bg-black relative">
-                                    <div className="w-full h-full bg-gray-900 flex items-center justify-center relative overflow-hidden">
-                                        <div className="absolute inset-0 opacity-20 bg-noise"></div>
-                                        <div className="w-10 h-10 rounded-full bg-amber-500/30 flex items-center justify-center text-sm font-bold text-amber-300 relative z-10">
-                                            {p.display_name.substring(0, 2).toUpperCase()}
+                                    {remoteStreams[p.id] ? (
+                                        <GreenRoomVideo stream={remoteStreams[p.id]} isLocal={false} />
+                                    ) : (
+                                        <div className="w-full h-full bg-gray-900 flex items-center justify-center relative overflow-hidden">
+                                            <div className="absolute inset-0 opacity-20 bg-noise"></div>
+                                            <div className="w-10 h-10 rounded-full bg-amber-500/30 flex items-center justify-center text-sm font-bold text-amber-300 relative z-10">
+                                                {p.display_name.substring(0, 2).toUpperCase()}
+                                            </div>
                                         </div>
-                                    </div>
+                                    )}
                                     
                                     <div className="absolute top-2 left-2 bg-amber-600 px-2 py-0.5 rounded text-[9px] font-bold text-white uppercase tracking-wider z-10">
                                         Waiting

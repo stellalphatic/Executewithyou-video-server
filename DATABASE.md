@@ -34,9 +34,9 @@ Set the `DATABASE_URL` environment variable or add it to your `.env` file:
 DATABASE_URL=postgres://allstrm:password@localhost:5432/allstrm
 ```
 
-## Schema Architecture
+## Schema Architecture (v4.0.0)
 
-ALLSTRM uses a microservices-oriented schema with three logical schemas:
+ALLSTRM uses a production-hardened schema partitioned into functional domains for security and scale:
 
 | Schema   | Service         | Purpose                                   |
 |----------|-----------------|-------------------------------------------|
@@ -44,17 +44,21 @@ ALLSTRM uses a microservices-oriented schema with three logical schemas:
 | `stream` | Stream Service  | RTMP sessions, HLS segments, destinations |
 | `assets` | Storage Service | Recordings, transcodes, uploads           |
 
+### The "Why": Architectural Decisions
+1. **Schema Partitioning**: Prevents hot tables (like `stream.health_metrics`) from impacting core application state.
+2. **Organization-Centric**: Supports B2B team collaboration by making Organizations the primary resource owners.
+3. **Identity Sync**: A PostgreSQL trigger bridges Supabase `auth.users` to `core.users` automatically on signup.
+4. **Performance Tuning**: Hot tables like `stream.health_metrics` use a `fillfactor = 50` to allow for efficient "HOT updates" without table bloat.
+
 ## Migration Files
 
-Migrations are located in `/migrations/`:
+The database has been consolidated into a single, idempotent source of truth:
 
 | File | Description |
 |------|-------------|
-| `001_initial_schema.sql` | Base tables and RLS policies |
-| `002_indexes_and_views.sql` | Performance indexes |
-| `003_production_schema.sql` | Production optimizations |
-| `004_microservices_schema.sql` | Schema separation for microservices |
-| `005_code_compatibility.sql` | Compatibility layer for Rust code |
+| `003_consolidated_all.sql` | **Primary Entry Point**. Contains all schemas, tables, triggers, and RLS policies (v4.0.0). |
+
+*Note: Older incremental migrations in `archive/` or previous versions are no longer used for fresh setups.*
 
 ## Running Migrations
 

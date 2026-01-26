@@ -101,20 +101,35 @@ export default function StudioPage() {
 
     const displayName = setupConfig?.displayName || user?.user_metadata?.display_name || user?.email?.split('@')[0] || (role === 'guest' ? 'Guest' : 'Host');
     
+    // Default visual config
+    const defaultVisualConfig: import('@/types').VisualConfigType = {
+        skinEnhance: false,
+        greenScreen: false,
+        backgroundType: 'none',
+        backgroundImage: '',
+        blurAmount: 10,
+        brightness: 100,
+        contrast: 100,
+        saturation: 100,
+        keyThreshold: 0.4,
+        keySmoothness: 0.1,
+    };
+    
     // Build configuration for Studio component
-    const studioConfig = {
+    const studioConfig: import('@/types').StudioConfiguration = {
         roomId,
+        roomName: `Room ${roomId}`,
         displayName,
-        role: role as 'host' | 'co-host' | 'guest' | 'viewer',
-        tier: (user?.user_metadata?.tier || 'free') as 'free' | 'pro' | 'business' | 'enterprise',
+        role: role as import('@/types').ParticipantRole,
+        tier: (user?.user_metadata?.tier || 'free') as import('@/types').Tier,
         audioEnabled: true,
         videoEnabled: true,
-        audioDeviceId: setupConfig?.audioDeviceId,
-        videoDeviceId: setupConfig?.videoDeviceId,
-        resolution: setupConfig?.resolution || '1080p',
+        audioDeviceId: setupConfig?.audioDeviceId || 'default',
+        videoDeviceId: setupConfig?.videoDeviceId || 'default',
+        resolution: (setupConfig?.resolution || '1080p') as '720p' | '1080p' | '4k' | '360p',
         frameRate: setupConfig?.frameRate || 30,
-        mode: setupConfig?.mode || 'studio',
-        visualConfig: setupConfig?.visualConfig || { mode: 'studio' },
+        mode: (setupConfig?.mode || 'studio') as import('@/types').RoomMode,
+        visualConfig: defaultVisualConfig,
         userId: user?.id || 'anonymous',
     };
     

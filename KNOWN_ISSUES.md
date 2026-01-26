@@ -4,6 +4,22 @@ This document tracks non-critical issues that can be fixed later.
 
 ---
 
+## Fixed Issues
+
+### Guest Duplicate Bug (FIXED - Jan 25, 2026)
+- **Status**: Fixed
+- **Description**: When a guest's audio/video track changed (mute/unmute), they would reappear in the waiting room despite being already admitted. This caused hosts to re-admit them, creating duplicate entries on stage.
+- **Root Cause**: Event handlers (TrackMuted, TrackUnmuted) had stale closure of `admittedParticipants` state. When `updateParticipants()` was called, it used outdated admitted status.
+- **Fix Applied**: 
+  1. Added `admittedParticipantsRef` ref to always access current admitted participants set
+  2. Updated `convertParticipant` to use ref instead of state closure
+  3. Added duplicate check in `handleStageToggle` before adding participants
+- **Files Fixed**:
+  - `frontend-next/src/hooks/useAllstrmLiveKit.ts`
+  - `frontend-next/src/components/Studio.tsx`
+
+---
+
 ## Video Processing
 
 ### Virtual Background / Blur Not Segmenting Properly
@@ -56,6 +72,24 @@ This document tracks non-critical issues that can be fixed later.
 
 ---
 
+## Video Mirroring
+
+### Camera Mirror Inconsistency Between Host and Guest
+- **Status**: Needs Investigation
+- **Description**: When running host and guest on the same machine, the camera appears mirrored differently on each side. The intent is for local preview to be mirrored (like a mirror) while remote views are un-mirrored. 
+- **Root Cause**: CSS transform `scaleX(-1)` combined with inline style zoom was overwriting the mirror. Fixed, but on same-machine testing both see the same physical camera which creates confusing visual.
+- **Files Involved**:
+  - `frontend-next/src/components/studio/VideoFeed.tsx`
+  - `frontend-next/src/components/Studio.tsx`
+  - `frontend-next/src/components/GreenRoom/GreenRoom.tsx`
+- **Priority**: Low (expected behavior when both are same physical camera)
+- **Notes**: 
+  - Fixed: inline style now includes both zoom and scaleX(-1) for local feeds
+  - This is mostly a "same machine testing" artifact - in production each user has their own camera
+  - Local preview should always be mirrored; remote feeds should not be mirrored
+
+---
+
 ## Template
 
 ### [Issue Title]
@@ -68,4 +102,37 @@ This document tracks non-critical issues that can be fixed later.
 
 ---
 
-*Last Updated: January 24, 2026*
+---
+
+## Recently Fixed (v4.1.0 - Jan 26, 2026)
+
+### Schema Consolidation
+- **Status**: Fixed
+- **Description**: Removed duplicate `core.oauth_connections` table, consolidated to `public.oauth_connections` with enhanced security (encrypted tokens)
+- **Files Fixed**: `migrations/003_consolidated_all.sql`
+
+### Stream Destinations Schema
+- **Status**: Fixed
+- **Description**: Removed duplicate `enabled`/`is_enabled` column, added proper FK constraints to `room_id`, `user_id`, `organization_id`
+- **Files Fixed**: `migrations/003_consolidated_all.sql`
+
+### Tier Naming Mismatch
+- **Status**: Fixed
+- **Description**: Added `broadcast` tier to DB schema to match TypeScript `Tier.BROADCAST`
+- **Files Fixed**: `migrations/003_consolidated_all.sql`, `frontend-next/src/types/index.ts`
+
+### API Rate Limiting
+- **Status**: Implemented
+- **Description**: Added in-memory rate limiting to all API routes (token, egress, destinations, rooms)
+- **Files Added**: `frontend-next/src/lib/rateLimit.ts`
+- **Files Modified**: Token, egress, destinations, rooms API routes
+
+### Error Boundaries
+- **Status**: Implemented
+- **Description**: Added React Error Boundary component wrapping the entire app
+- **Files Added**: `frontend-next/src/components/ErrorBoundary.tsx`
+- **Files Modified**: `frontend-next/src/app/providers.tsx`
+
+---
+
+*Last Updated: January 26, 2026*

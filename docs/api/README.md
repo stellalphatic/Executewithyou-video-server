@@ -1,466 +1,205 @@
-# ALLSTRM API Reference
+# AllStrm API Reference
 
-## Base URL
+## Overview
+
+AllStrm uses **Next.js API Routes** for backend functionality, with **LiveKit** handling real-time communication and **Supabase** for authentication and data persistence.
+
+## Base URLs
 
 ```
-Production: https://api.allstrm.io
-Development: http://localhost:8080
+Development: http://localhost:3000/api
+Production: https://app.allstrm.io/api
 ```
+
+---
 
 ## Authentication
 
-All API requests require a JWT token in the Authorization header:
+Authentication is handled by Supabase Auth. All protected routes require a valid session.
 
+### Supabase Session
+```typescript
+// Client-side auth check
+const { data: { user } } = await supabase.auth.getUser();
 ```
-Authorization: Bearer <jwt_token>
-```
-
-Tokens are issued by Supabase Auth or the local dev mode refresh endpoint.
 
 ---
 
-## Gateway Endpoints (Port 8080)
+## API Endpoints
 
-### Health Check
+### LiveKit Token Generation
 
 ```http
-GET /health
+POST /api/livekit/token
+Content-Type: application/json
 ```
 
-Response: `200 OK`
+**Request Body:**
 ```json
 {
-  "status": "healthy",
-  "version": "0.1.0"
-}
-```
-
-### Token Refresh
-
-```http
-POST /auth/refresh
-Content-Type: application/json
-
-{
-  "refresh_token": "your_refresh_token"
-}
-```
-
-Response: `200 OK`
-```json
-{
-  "access_token": "new_jwt_token",
-  "token_type": "bearer",
-  "expires_in": 3600,
-  "refresh_token": "new_refresh_token",
-  "user": { "id": "uuid", "email": "user@example.com" }
-}
-```
-
-### Logout
-
-```http
-POST /auth/logout
-Content-Type: application/json
-
-{
-  "refresh_token": "optional_refresh_token"
-}
-```
-
-Response: `204 No Content`
-
----
-
-## Room Endpoints
-
-### Create Room
-
-```http
-POST /api/v1/rooms
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "name": "My Stream",
-  "mode": "studio",
-  "settings": {
-    "max_participants": 10,
-    "auto_record": false
+  "roomName": "studio-abc123",
+  "participantName": "John Doe",
+  "role": "host" | "co-host" | "guest",
+  "metadata": {
+    "displayName": "John",
+    "waitingRoom": true
   }
 }
 ```
 
-Response: `201 Created`
+**Response:**
 ```json
 {
-  "id": "uuid",
-  "name": "My Stream",
-  "mode": "studio",
-  "status": "idle",
-  "settings": {},
-  "created_at": "2026-01-19T12:00:00Z"
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 }
 ```
 
-### List Rooms
+**Token Grants by Role:**
+
+| Role | Permissions |
+|------|-------------|
+| host | room:create, room:admin, publish, subscribe, data |
+| co-host | publish, subscribe, data |
+| guest | subscribe, data (publish gated by host) |
+
+---
+
+### Egress API (Recording & Streaming)
+
+#### Start Recording/Stream
 
 ```http
-GET /api/v1/rooms?limit=20&offset=0
-Authorization: Bearer <token>
-```
-
-Response: `200 OK`
-```json
-{
-  "rooms": [...],
-  "total": 50,
-  "limit": 20,
-  "offset": 0
-}
-```
-
-### Get Room
-
-```http
-GET /api/v1/rooms/:id
-Authorization: Bearer <token>
-```
-
-### Update Room
-
-```http
-PATCH /api/v1/rooms/:id
-Authorization: Bearer <token>
+POST /api/egress/start
 Content-Type: application/json
-
-{
-  "name": "Updated Name",
-  "status": "live"
-}
 ```
 
-### Delete Room
-
-```http
-DELETE /api/v1/rooms/:id
-Authorization: Bearer <token>
-```
-
-Response: `204 No Content`
-
-### Join Room
-
-```http
-POST /api/v1/rooms/:id/join
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "display_name": "John Doe",
-  "role": "guest"
-}
-```
-
-Response: `200 OK`
+**Request Body:**
 ```json
 {
-  "participant_id": "uuid",
-  "room_id": "uuid",
-  "ice_servers": [...]
+  "roomName": "studio-abc123",
+  "outputs": [
+    {
+      "type": "rtmp",
+      "url": "rtmp://a.rtmp.youtube.com/live2/xxxx-xxxx-xxxx"
+    }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "egressId": "EG_xxxxxxxxxxxxx",
+  "status": "starting"
+}
+```
+
+#### Stop Recording/Stream
+
+```http
+POST /api/egress/stop
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "egressId": "EG_xxxxxxxxxxxxx"
+}
+```
+
+**Response:**
+```json
+{
+  "status": "stopped"
 }
 ```
 
 ---
 
-## Destination Endpoints
+## LiveKit Data Messages
 
-### List Destinations
+Real-time communication between participants uses LiveKit's Data API.
 
-```http
-GET /api/v1/destinations?room_id=<uuid>
-Authorization: Bearer <token>
-```
+### Message Types
 
-### Create Destination
-
-```http
-POST /api/v1/destinations
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "room_id": "uuid",
-  "platform": "youtube",
-  "name": "My YouTube Channel",
-  "rtmp_url": "rtmp://a.rtmp.youtube.com/live2",
-  "stream_key": "xxxx-xxxx-xxxx"
-}
-```
-
-### Update Destination
-
-```http
-PATCH /api/v1/destinations/:id
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "enabled": true
-}
-```
-
-### Delete Destination
-
-```http
-DELETE /api/v1/destinations/:id
-Authorization: Bearer <token>
-```
-
-### Test Destination
-
-```http
-POST /api/v1/destinations/:id/test
-Authorization: Bearer <token>
-```
-
----
-
-## Recording Endpoints
-
-### List Recordings
-
-```http
-GET /api/v1/recordings?room_id=<uuid>
-Authorization: Bearer <token>
-```
-
-### Get Recording
-
-```http
-GET /api/v1/recordings/:id
-Authorization: Bearer <token>
-```
-
-Response includes presigned download URL:
+#### Stage Synchronization
 ```json
 {
-  "id": "uuid",
-  "room_id": "uuid",
-  "status": "completed",
-  "duration_seconds": 3600,
-  "download_url": "https://r2.../signed-url"
+  "type": "stageSync",
+  "participants": [
+    {
+      "id": "PA_xxx",
+      "name": "John",
+      "isOnStage": true,
+      "position": { "x": 0, "y": 0, "width": 0.5, "height": 1 }
+    }
+  ],
+  "timestamp": 1706234567890
 }
 ```
 
-### Delete Recording
-
-```http
-DELETE /api/v1/recordings/:id
-Authorization: Bearer <token>
-```
-
----
-
-## Upload Endpoints
-
-### Get Presigned Upload URL
-
-```http
-POST /api/v1/upload/sign
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "room_id": "uuid",
-  "filename": "overlay.png",
-  "content_type": "image/png",
-  "size_bytes": 102400
-}
-```
-
-Response:
+#### Admission (Waiting Room)
 ```json
 {
-  "upload_url": "https://r2.../presigned",
-  "asset_id": "uuid",
-  "expires_at": "2026-01-19T13:00:00Z"
+  "type": "admission",
+  "participantId": "PA_xxx",
+  "admitted": true
 }
 ```
 
-### Complete Upload
-
-```http
-POST /api/v1/upload/complete
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "asset_id": "uuid"
-}
-```
-
----
-
-## WebSocket API
-
-### Connection
-
-```
-wss://api.allstrm.io/ws?token=<jwt_token>&room_id=<uuid>
-```
-
-### Message Format
-
-All messages use JSON format:
-
+#### Kick Participant
 ```json
 {
-  "type": "message_type",
-  "payload": { ... }
+  "type": "kick",
+  "participantId": "PA_xxx",
+  "reason": "Removed by host"
 }
 ```
 
-### Client → Server Messages
-
-#### Join Room
+#### Permission Update
 ```json
 {
-  "type": "join",
-  "payload": {
-    "room_id": "uuid",
-    "display_name": "John",
-    "role": "guest"
-  }
-}
-```
-
-#### SDP Offer
-```json
-{
-  "type": "sdp_offer",
-  "payload": {
-    "sdp": "v=0\r\n..."
-  }
-}
-```
-
-#### ICE Candidate
-```json
-{
-  "type": "ice_candidate",
-  "payload": {
-    "candidate": "candidate:...",
-    "sdp_mid": "0",
-    "sdp_m_line_index": 0
-  }
-}
-```
-
-#### Leave Room
-```json
-{
-  "type": "leave",
-  "payload": {}
-}
-```
-
-### Server → Client Messages
-
-#### Join Accepted
-```json
-{
-  "type": "join_accepted",
-  "payload": {
-    "participant_id": "uuid",
-    "room_id": "uuid",
-    "participants": [...],
-    "ice_servers": [...]
-  }
-}
-```
-
-#### SDP Answer
-```json
-{
-  "type": "sdp_answer",
-  "payload": {
-    "sdp": "v=0\r\n..."
-  }
-}
-```
-
-#### Participant Joined
-```json
-{
-  "type": "participant_joined",
-  "payload": {
-    "participant_id": "uuid",
-    "display_name": "Jane",
-    "role": "guest"
-  }
-}
-```
-
-#### Participant Left
-```json
-{
-  "type": "participant_left",
-  "payload": {
-    "participant_id": "uuid"
-  }
-}
-```
-
-#### Error
-```json
-{
-  "type": "error",
-  "payload": {
-    "code": "room_full",
-    "message": "Room has reached maximum capacity"
+  "type": "permissionUpdate",
+  "participantId": "PA_xxx",
+  "permissions": {
+    "audio": true,
+    "video": false,
+    "screenShare": false,
+    "chat": true
   }
 }
 ```
 
 ---
 
-## Error Responses
+## Environment Variables
 
-All errors follow this format:
+```env
+# LiveKit Server
+NEXT_PUBLIC_LIVEKIT_URL=ws://localhost:7880
+LIVEKIT_API_KEY=devkey
+LIVEKIT_API_SECRET=devsecret
 
-```json
-{
-  "error": "error_code",
-  "message": "Human readable message"
-}
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-key>
+SUPABASE_SERVICE_ROLE_KEY=<service-key>
 ```
-
-### Common Error Codes
-
-| Code | HTTP Status | Description |
-|------|-------------|-------------|
-| `unauthorized` | 401 | Invalid or expired token |
-| `forbidden` | 403 | Insufficient permissions |
-| `not_found` | 404 | Resource not found |
-| `validation_error` | 400 | Invalid request body |
-| `rate_limited` | 429 | Too many requests |
-| `internal_error` | 500 | Server error |
 
 ---
 
-## OAuth Endpoints
+## OAuth API (Streaming Platform Integrations)
 
-ALLSTRM supports OAuth integration for automatic stream key fetching from 13 platforms.
+OAuth enables automatic RTMP URL and stream key retrieval from connected platforms.
 
 ### List OAuth Providers
 
 ```http
 GET /api/oauth/providers
-Authorization: Bearer <token>
 ```
 
-Response: `200 OK`
+**Response:**
 ```json
 {
   "providers": [
@@ -471,120 +210,191 @@ Response: `200 OK`
       "is_configured": true
     },
     {
-      "name": "facebook",
-      "display_name": "Facebook Live",
-      "icon": "facebook",
-      "is_configured": true
-    },
-    {
       "name": "twitch",
-      "display_name": "Twitch",
+      "display_name": "Twitch", 
       "icon": "twitch",
-      "is_configured": true
+      "is_configured": false
     }
   ]
 }
 ```
 
-### Supported Platforms
+> **Note:** `is_configured` is `true` only when the platform's OAuth credentials are set in environment variables. Platforms with `is_configured: false` fall back to manual RTMP entry.
 
-| Platform | OAuth Type | Stream Key Fetching |
-|----------|------------|---------------------|
-| YouTube | Google OAuth | Automatic |
-| Facebook Live | Facebook Login | Automatic |
-| LinkedIn Live | LinkedIn OAuth | Automatic |
-| X (Twitter) | OAuth 2.0 + PKCE | Automatic |
-| Twitch | Twitch OAuth | Automatic |
-| Instagram Live | Facebook OAuth | Automatic (Business) |
-| TikTok Live | TikTok Login Kit | Automatic |
-| Kick | Manual RTMP | Manual |
-| Vimeo | Vimeo OAuth | Automatic |
-| Amazon Live | Amazon OAuth | Automatic |
-| Brightcove | Client Credentials | Automatic |
-| Hopin | Hopin OAuth | Automatic |
-| Custom RTMP | Manual | Manual |
+---
 
-### Initiate OAuth Flow
+### Start OAuth Authorization
 
 ```http
-GET /api/oauth/:provider/authorize?user_id=<uuid>&redirect_uri=/dashboard
+GET /api/oauth/{provider}/authorize?user_id={uuid}&redirect_uri={path}
 ```
 
-Redirects to the provider's OAuth consent page. After authorization, the user is redirected to the callback URL, then to the specified `redirect_uri`.
+**Parameters:**
+| Name | Type | Description |
+|------|------|-------------|
+| provider | string | Platform ID (youtube, twitch, facebook, linkedin, x, vimeo) |
+| user_id | uuid | Supabase user ID |
+| redirect_uri | string | Redirect path after OAuth (default: /dashboard) |
+
+**Response:** Redirects to provider's OAuth consent page
+
+---
 
 ### OAuth Callback
 
 ```http
-GET /api/oauth/:provider/callback?code=<auth_code>&state=<state_token>
+GET /api/oauth/{provider}/callback?code={code}&state={state}
 ```
 
-Handled internally. Exchanges the authorization code for tokens and stores the connection.
+Handles the OAuth callback from providers. On success, redirects to:
+```
+{redirect_uri}?oauth_success={provider}
+```
 
-### List User's OAuth Connections
+---
+
+### List User Connections
 
 ```http
-GET /api/oauth/connections?user_id=<uuid>
-Authorization: Bearer <token>
+GET /api/oauth/connections?user_id={uuid}
 ```
 
-Response: `200 OK`
+**Response:**
 ```json
 {
   "connections": [
     {
-      "id": "uuid",
+      "id": "conn_abc123",
       "provider": "youtube",
-      "provider_user_id": "UC...",
-      "provider_username": "MyChannel",
-      "provider_display_name": "My YouTube Channel",
-      "is_active": true,
-      "created_at": "2026-01-19T12:00:00Z"
+      "provider_user_id": "UC_xxx",
+      "provider_username": "My YouTube Channel",
+      "created_at": "2026-01-25T12:00:00Z",
+      "updated_at": "2026-01-25T12:00:00Z"
     }
   ]
-}
-```
-
-### Disconnect OAuth Connection
-
-```http
-DELETE /api/oauth/connections/:connection_id
-Authorization: Bearer <token>
-```
-
-Response: `204 No Content`
-
-### Get Stream Destination from Connection
-
-```http
-GET /api/oauth/connections/:connection_id/destination
-Authorization: Bearer <token>
-```
-
-Response: `200 OK`
-```json
-{
-  "provider": "youtube",
-  "channel_id": "UC...",
-  "channel_name": "My Channel",
-  "rtmp_url": "rtmp://a.rtmp.youtube.com/live2",
-  "stream_key": "xxxx-xxxx-xxxx",
-  "backup_rtmp_url": "rtmp://b.rtmp.youtube.com/live2",
-  "title": "Live Stream",
-  "is_live": false
 }
 ```
 
 ---
 
+### Delete OAuth Connection
+
+```http
+DELETE /api/oauth/connections?id={conn_id}&user_id={uuid}
+```
+
+**Response:**
+```json
+{ "success": true }
+```
+
+---
+
+### Get RTMP Destination from OAuth
+
+```http
+GET /api/oauth/connections/{id}/destination?user_id={uuid}
+```
+
+**Response:**
+```json
+{
+  "provider": "youtube",
+  "provider_username": "My Channel",
+  "rtmp_url": "rtmp://a.rtmp.youtube.com/live2",
+  "stream_key": "xxxx-xxxx-xxxx-xxxx"
+}
+```
+
+> This endpoint automatically refreshes expired tokens when a refresh_token is available.
+
+---
+
+### OAuth Environment Variables
+
+To enable OAuth for a platform, set these environment variables:
+
+| Platform | Environment Variables |
+|----------|----------------------|
+| YouTube | `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET` |
+| Twitch | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` |
+| Facebook | `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET` |
+| LinkedIn | `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET` |
+| X (Twitter) | `X_CLIENT_ID`, `X_CLIENT_SECRET` |
+| Vimeo | `VIMEO_CLIENT_ID`, `VIMEO_CLIENT_SECRET` |
+
+Also required: `SUPABASE_SERVICE_ROLE_KEY` (for storing OAuth tokens)
+
+---
+
+## RTMP Destinations
+
+RTMP destinations are stored in browser localStorage and managed client-side.
+
+**Storage Key:** `allstrm_destinations`
+
+**Destination Object:**
+```json
+{
+  "id": "dest_xxx",
+  "name": "YouTube Live",
+  "platform": "youtube",
+  "rtmpUrl": "rtmp://a.rtmp.youtube.com/live2",
+  "streamKey": "xxxx-xxxx-xxxx",
+  "enabled": true
+}
+```
+
+**Supported Platforms:**
+- YouTube Live (OAuth + Manual)
+- Twitch (OAuth + Manual)
+- Facebook Live (OAuth + Manual)
+- LinkedIn Live (OAuth + Manual)
+- X / Twitter (OAuth + Manual)
+- Vimeo (OAuth + Manual)
+- Kick (Manual only)
+- Custom RTMP (Manual only)
+- Custom SRT (Manual only)
+
+---
+
+## Error Handling
+
+All API responses follow this format for errors:
+
+```json
+{
+  "error": "error_code",
+  "message": "Human readable message"
+}
+```
+
+| HTTP Status | Error Code | Description |
+|-------------|------------|-------------|
+| 400 | `invalid_request` | Missing or invalid parameters |
+| 401 | `unauthorized` | Missing or invalid auth |
+| 403 | `forbidden` | Insufficient permissions |
+| 500 | `internal_error` | Server error |
+
+---
+
 ## Rate Limiting
 
-Default limits:
-- 100 requests per second per IP
-- 200 burst capacity
+API routes are subject to Next.js/Vercel rate limits:
+- 100 requests per 10 seconds per IP (development)
+- Custom limits configurable for production
 
-Rate limit headers:
+---
+
+## WebSocket Events (LiveKit)
+
+```javascript
+// Subscribe to room events
+room.on(RoomEvent.ParticipantConnected, (participant) => {});
+room.on(RoomEvent.ParticipantDisconnected, (participant) => {});
+room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {});
+room.on(RoomEvent.DataReceived, (payload, participant) => {});
+room.on(RoomEvent.ConnectionStateChanged, (state) => {});
 ```
-X-RateLimit-Limit: 100
-X-RateLimit-Remaining: 95
-X-RateLimit-Reset: 1705669200
-```
+
+See [LiveKit Client SDK](https://docs.livekit.io/client-sdk-js/) for full documentation.

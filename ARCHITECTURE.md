@@ -1,20 +1,27 @@
-# ALLSTRM v2 Architecture
+# ALLSTRM Architecture (v3/v4)
 
-> **Note**: This is ALLSTRM v2, rebuilt on LiveKit. The previous Rust architecture (v1) is archived at `/archive/rust-backend-v1/`.
+> **Note**: This is the modern ALLSTRM architecture, built on **LiveKit** and **Supabase**. The system has evolved into a production-hardened v3/v4 version focused on multi-tenant isolation and service-ready partitioning.
 
-## Overview
+## Architectural Rationale: The "Why"
 
-ALLSTRM v2 uses a simplified architecture built on **LiveKit** (open-source WebRTC infrastructure) and **Supabase** (Backend-as-a-Service). This replaces the previous custom 5-service Rust architecture.
+The database and backend are designed for **Service-Oriented Scalability** while maintaining the developer velocity of a monolith.
 
-### Why the Change?
+### 1. Service-Ready Partitioning (`core`, `stream`, `assets`)
+The database is physically split into functional schemas. 
+- **Why?** This prevents "Table Bloat" and allows for future physical database sharding. A lock on a heavy logging table in `stream` won't block the `core` auth system.
 
-| v1 (Rust) | v2 (LiveKit) |
-|-----------|--------------|
-| 5 custom microservices | 0 custom services |
-| Custom WebRTC signaling | LiveKit handles it |
-| Custom FFmpeg orchestration | LiveKit Egress |
-| Weeks of debugging | Production-ready |
-| ~20,000 lines of Rust | ~2,000 lines of TypeScript |
+### 2. Multi-Tenancy (Organizations First)
+All rooms and resources belong to **Organizations**, not individual Users.
+- **Why?** Professional streaming is collaborative. This model supports team-based workflows (Producers, Hosts, Guests) and aggregate billing out of the box.
+
+### 3. Evolutionary Flexibility (JSONB)
+We use `JSONB` for configurations and metadata.
+- **Why?** Streaming protocols and platform APIs (YouTube/Twitch) change rapidly. This allows us to adapt without constant schema migrations that would cause downtime.
+- **Trade-off**: Higher flexibility comes with a slight search penalty, mitigated by GIN/Functional indexes.
+
+### 4. Defense-in-Depth (Row Level Security)
+Security is enforced at the database level via Postgres RLS.
+- **Why?** It is the ultimate safety net. Even if application code has a bug, the database engine enforces tenant isolation.
 
 ## Architecture Diagram
 
@@ -22,10 +29,10 @@ ALLSTRM v2 uses a simplified architecture built on **LiveKit** (open-source WebR
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         CLIENTS                                     │
 │                                                                     │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                 │
-│  │   Browser   │  │   Mobile    │  │   Desktop   │                 │
-│  │  (Next.js)  │  │  (Future)   │  │  (Future)   │                 │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘                 │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                  │
+│  │   Browser   │  │   Mobile    │  │   Desktop   │                  │
+│  │  (Next.js)  │  │  (Future)   │  │  (Future)   │                  │
+│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘                  │
 │         │                │                │                         │
 │         └────────────────┼────────────────┘                         │
 │                          │                                          │
@@ -76,12 +83,12 @@ ALLSTRM v2 uses a simplified architecture built on **LiveKit** (open-source WebR
 
 ### Frontend (Next.js)
 
-| Component | Purpose |
-|-----------|---------|
-| `@livekit/components-react` | Pre-built WebRTC UI components |
-| `livekit-client` | Low-level WebRTC client |
-| Supabase Client | Auth, database queries |
-| API Routes | Token generation, business logic |
+| Component                   | Purpose                          |
+|-----------------------------|----------------------------------|
+| `@livekit/components-react` | Pre-built WebRTC UI components   |
+| `livekit-client`            | Low-level WebRTC client          |
+| Supabase Client             | Auth, database queries           |
+| API Routes                  | Token generation, business logic |
 
 ### Supabase
 
@@ -132,10 +139,10 @@ Browser                    Next.js API             Supabase           LiveKit
    │  { room, token }          │                      │                  │
    │                           │                      │                  │
    │  Connect with token       │                      │                  │
-   │ ─────────────────────────────────────────────────────────────────>│
+   │ ─────────────────────────────────────────────────────────────────>  │
    │                           │                      │                  │
    │  WebRTC established       │                      │                  │
-   │<─────────────────────────────────────────────────────────────────│
+   │<─────────────────────────────────────────────────────────────────   │
 ```
 
 ### 2. Start Streaming (Go Live)

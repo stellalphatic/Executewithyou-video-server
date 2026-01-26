@@ -20,7 +20,9 @@
       "Bash(docker run:*)",
       "Bash(curl:*)",
       "Bash(tree:*)",
-      "Bash(docker-compose:*)"
+      "Bash(docker-compose:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run build:*)"
     ]
   }
 }

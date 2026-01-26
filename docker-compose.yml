@@ -88,12 +88,34 @@ services:
     ports:
       - "3000:3000"
     environment:
+      # Core
+      - NEXT_PUBLIC_APP_URL=http://localhost:3000
       - NEXT_PUBLIC_LIVEKIT_URL=ws://localhost:7880
       - NEXT_PUBLIC_SUPABASE_URL=http://host.docker.internal:54321
       - NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
       - LIVEKIT_API_KEY=devkey
       - LIVEKIT_API_SECRET=devsecret
       - LIVEKIT_URL=http://host.docker.internal:7880
+      # Supabase Service Role (for OAuth token storage)
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY:-}
+      # OAuth - YouTube (Google)
+      - YOUTUBE_CLIENT_ID=${YOUTUBE_CLIENT_ID:-}
+      - YOUTUBE_CLIENT_SECRET=${YOUTUBE_CLIENT_SECRET:-}
+      # OAuth - Twitch
+      - TWITCH_CLIENT_ID=${TWITCH_CLIENT_ID:-}
+      - TWITCH_CLIENT_SECRET=${TWITCH_CLIENT_SECRET:-}
+      # OAuth - Facebook
+      - FACEBOOK_APP_ID=${FACEBOOK_APP_ID:-}
+      - FACEBOOK_APP_SECRET=${FACEBOOK_APP_SECRET:-}
+      # OAuth - LinkedIn
+      - LINKEDIN_CLIENT_ID=${LINKEDIN_CLIENT_ID:-}
+      - LINKEDIN_CLIENT_SECRET=${LINKEDIN_CLIENT_SECRET:-}
+      # OAuth - X (Twitter)
+      - X_CLIENT_ID=${X_CLIENT_ID:-}
+      - X_CLIENT_SECRET=${X_CLIENT_SECRET:-}
+      # OAuth - Vimeo
+      - VIMEO_CLIENT_ID=${VIMEO_CLIENT_ID:-}
+      - VIMEO_CLIENT_SECRET=${VIMEO_CLIENT_SECRET:-}
     volumes:
       - ./frontend-next:/app
       - /app/node_modules
