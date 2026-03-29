@@ -6,18 +6,31 @@ import { Meeting } from '@/components/Meeting/Meeting';
 import { useAuth } from '@/contexts/AuthContext';
 import { StudioConfiguration, Tier } from '@/types';
 
+/**
+ * Meeting page that supports BOTH:
+ * 1. Token-based access (EWY users) — via ?token= query param
+ * 2. Supabase auth access (native allstrm users)
+ */
 export default function MeetingPage() {
     const params = useParams();
     const router = useRouter();
     const searchParams = useSearchParams();
     const { isAuthenticated, isLoading, tier, user, hasAnotherTab, canTakeAccess, takeAccess } = useAuth();
     const roomId = params.roomId as string;
-    
+
+    // Check for token-based access (EWY integration)
+    const tokenParam = searchParams.get('token');
+    const isTokenBased = !!tokenParam;
+
     // Diagnostic: Track re-renders of the page - MUST be before any early returns
     const pageRenderCount = React.useRef(0);
     pageRenderCount.current++;
 
-    const displayName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Guest';
+    // For token-based access, extract name from token metadata or use search params
+    const nameFromParam = searchParams.get('name');
+    const displayName = isTokenBased
+        ? (nameFromParam || 'Participant')
+        : (user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Guest');
     const role = searchParams.get('role') === 'guest' ? 'guest' : 'host';
 
     const config = React.useMemo<StudioConfiguration>(() => ({
@@ -45,27 +58,37 @@ export default function MeetingPage() {
             saturation: 1,
             keyThreshold: 0,
             keySmoothness: 0
-        }
-    }), [roomId, displayName, tier, role]);
+        },
+        // Pass the pre-generated token so useAllstrm uses it directly
+        ...(isTokenBased && tokenParam ? { preGeneratedToken: tokenParam } : {}),
+    }), [roomId, displayName, tier, role, isTokenBased, tokenParam]);
 
     const handleLeave = React.useCallback(() => {
-        router.push('/dashboard');
-    }, [router]);
+        if (isTokenBased) {
+            // For EWY users, close the tab or show a "meeting ended" screen
+            window.close();
+            // If window.close() doesn't work (popup blocker), show ended state
+        } else {
+            router.push('/dashboard');
+        }
+    }, [router, isTokenBased]);
 
+    // Only enforce auth for non-token-based access
     React.useEffect(() => {
+        if (isTokenBased) return; // Skip auth check for token-based access
         console.log("meeting page auth check", { isLoading, isAuthenticated, hasAnotherTab });
         if (!isLoading && !isAuthenticated) {
             router.push('/login');
         }
-    }, [isAuthenticated, isLoading, router, hasAnotherTab]);
+    }, [isAuthenticated, isLoading, router, hasAnotherTab, isTokenBased]);
 
     React.useEffect(() => {
-        console.log('[MeetingPage] Config created:', { role: config.role, roomId: config.roomId });
-    }, [config]);
+        console.log('[MeetingPage] Config created:', { role: config.role, roomId: config.roomId, isTokenBased });
+    }, [config, isTokenBased]);
 
-    console.log(`[MeetingPage] RENDER #${pageRenderCount.current}`, { user_id: user?.id, hasAnotherTab });
+    console.log(`[MeetingPage] RENDER #${pageRenderCount.current}`, { user_id: user?.id, hasAnotherTab, isTokenBased });
 
-    if (hasAnotherTab) {
+    if (hasAnotherTab && !isTokenBased) {
         return (
             <div className="flex h-screen w-full items-center justify-center bg-black text-white p-6">
                 <div className="max-w-md text-center">
@@ -96,6 +119,11 @@ export default function MeetingPage() {
                 </div>
             </div>
         );
+    }
+
+    // For token-based access, skip auth loading gates
+    if (isTokenBased) {
+        return <Meeting key={`${config.roomId}-${config.role}`} config={config} onLeave={handleLeave} />;
     }
 
     if (isLoading && !user) {
