@@ -310,9 +310,20 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
       }
 
       const data = await res.json();
+      let dynamicUrl = 'ws://localhost:7880';
+      if (typeof window !== 'undefined') {
+        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        if (!isLocalhost) {
+          const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          dynamicUrl = `${wsProtocol}//${window.location.hostname}:7880`;
+        }
+      }
+      const envUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL;
+      const finalServerUrl = data.serverUrl || ((envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) ? envUrl : dynamicUrl);
+      
       return {
         token: data.token,
-        serverUrl: data.serverUrl || process.env.NEXT_PUBLIC_LIVEKIT_URL || (typeof window !== 'undefined' ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:7880` : 'ws://localhost:7880'),
+        serverUrl: finalServerUrl,
       };
     } catch (err) {
       console.error('[useAllstrmLiveKit] Token fetch error:', err);
@@ -343,8 +354,17 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
       // If we have a pre-generated token from the URL, use it directly
       if (options.initialConfig?.preGeneratedToken) {
         console.log('[useAllstrmLiveKit] Using pre-generated token for connection');
-        const dynamicUrl = typeof window !== 'undefined' ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:7880` : 'ws://localhost:7880';
-        const serverUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL || dynamicUrl;
+        let dynamicUrl = 'ws://localhost:7880';
+        if (typeof window !== 'undefined') {
+          const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+          if (!isLocalhost) {
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            dynamicUrl = `${wsProtocol}//${window.location.hostname}:7880`;
+          }
+        }
+        
+        const envUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL;
+        const serverUrl = (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) ? envUrl : dynamicUrl;
         
         tokenData = {
           token: options.initialConfig.preGeneratedToken,
