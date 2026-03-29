@@ -312,7 +312,7 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
       const data = await res.json();
       return {
         token: data.token,
-        serverUrl: data.serverUrl || process.env.NEXT_PUBLIC_LIVEKIT_URL || 'ws://localhost:7880',
+        serverUrl: data.serverUrl || process.env.NEXT_PUBLIC_LIVEKIT_URL || (typeof window !== 'undefined' ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:7880` : 'ws://localhost:7880'),
       };
     } catch (err) {
       console.error('[useAllstrmLiveKit] Token fetch error:', err);
@@ -339,8 +339,20 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
     console.log('[useAllstrmLiveKit] Starting connection attempt', currentAttempt);
 
     try {
-      // Fetch token
-      const tokenData = await fetchToken();
+      let tokenData;
+      // If we have a pre-generated token from the URL, use it directly
+      if (options.initialConfig?.preGeneratedToken) {
+        console.log('[useAllstrmLiveKit] Using pre-generated token for connection');
+        const dynamicUrl = typeof window !== 'undefined' ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:7880` : 'ws://localhost:7880';
+        const serverUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL || dynamicUrl;
+        
+        tokenData = {
+          token: options.initialConfig.preGeneratedToken,
+          serverUrl: serverUrl,
+        };
+      } else {
+        tokenData = await fetchToken();
+      }
 
       // Check if this attempt is still valid (not superseded by newer attempt or disconnect)
       if (connectionAttemptRef.current !== currentAttempt) {
