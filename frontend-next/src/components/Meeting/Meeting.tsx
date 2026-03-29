@@ -87,7 +87,7 @@ export const Meeting: React.FC<MeetingProps> = ({ config, onLeave }) => {
         chatMessages, sendChatMessage, admitParticipant, startFilePresentation,
         globalMuteState, globalVideoState, activeRecordings, pausedRecordings,
         nextSlide, prevSlide, presentationState,
-        setMixerLayout, updateRecordingScene, isLocalInWaitingRoom
+        setMixerLayout, updateRecordingScene, isLocalInWaitingRoom, isRoomRecording
     } = allstrm;
 
     useEffect(() => {
@@ -303,10 +303,10 @@ export const Meeting: React.FC<MeetingProps> = ({ config, onLeave }) => {
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
-                        {activeRecordings.length > 0 && (
+                        {(isRoomRecording || activeRecordings.length > 0) && (
                             <div className="flex items-center gap-2 px-3 py-1 bg-red-500/10 border border-red-500/20 rounded text-red-500 animate-pulse">
                                 <CircleDot className="w-3 h-3 fill-current" />
-                                <span className="text-[10px] font-bold">{recordingLabel} {formatTime(recordingTime)}</span>
+                                <span className="text-[10px] font-bold">{isRoomRecording ? 'AUTO REC' : recordingLabel} {formatTime(recordingTime)}</span>
                             </div>
                         )}
                         <div className="px-3 py-1 bg-gray-800 rounded text-xs font-mono text-gray-300 min-w-[60px] text-center">

@@ -57,6 +57,7 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
   setMixerLayout: (layout: 'grid' | 'speaker', focusId?: string) => void;
   updateRecordingScene: (scene: Scene) => void;
   isLocalInWaitingRoom: boolean;
+  isRoomRecording: boolean;
   sendDataMessage: (message: Record<string, unknown>) => Promise<void>;
   receivedStageState: string[];
   stageStateVersion: number;
@@ -85,6 +86,7 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isRoomRecording, setIsRoomRecording] = useState(false);
   const [participants, setParticipants] = useState<AllstrmParticipant[]>([]);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
@@ -411,7 +413,7 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
         if (room.localParticipant) {
           const stream = new MediaStream();
           room.localParticipant.trackPublications.forEach((pub) => {
-            if (pub.track) {
+            if (pub.track && (pub.source === Track.Source.Camera || pub.source === Track.Source.Microphone)) {
               stream.addTrack(pub.track.mediaStreamTrack);
             }
           });
@@ -421,14 +423,19 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
         }
       });
 
-      room.on(RoomEvent.Disconnected, (reason) => {
-        console.log('[useAllstrmLiveKit] Disconnected from room:', reason);
-        isConnectedRef.current = false;
-        isConnectingRef.current = false;
+      room.on(RoomEvent.Disconnected, () => {
         setIsConnected(false);
-        setIsConnecting(false);
         setParticipants([]);
+        setLocalStream(null);
+        setScreenStream(null);
         setRemoteStreams({});
+        setChatMessages([]);
+        setActiveRecordings([]);
+        setIsRoomRecording(false);
+      });
+
+      room.on(RoomEvent.RecordingStatusChanged, (isRecording: boolean) => {
+        setIsRoomRecording(isRecording);
       });
 
       room.on(RoomEvent.ParticipantConnected, (participant: RemoteParticipant) => {
@@ -486,7 +493,7 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
         if (room.localParticipant) {
           const stream = new MediaStream();
           room.localParticipant.trackPublications.forEach((pub) => {
-            if (pub.track) {
+            if (pub.track && (pub.source === Track.Source.Camera || pub.source === Track.Source.Microphone)) {
               stream.addTrack(pub.track.mediaStreamTrack);
             }
           });
@@ -503,7 +510,7 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
         if (room.localParticipant) {
           const stream = new MediaStream();
           room.localParticipant.trackPublications.forEach((pub) => {
-            if (pub.track && pub.track.mediaStreamTrack) {
+            if (pub.track && pub.track.mediaStreamTrack && (pub.source === Track.Source.Camera || pub.source === Track.Source.Microphone)) {
               stream.addTrack(pub.track.mediaStreamTrack);
             }
           });
@@ -727,22 +734,11 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
     // This ensures the stream includes the new video track state
     const stream = new MediaStream();
     room.localParticipant.trackPublications.forEach((pub) => {
-      if (pub.track && pub.track.mediaStreamTrack) {
+      if (pub.track && pub.track.mediaStreamTrack && (pub.source === Track.Source.Camera || pub.source === Track.Source.Microphone)) {
         stream.addTrack(pub.track.mediaStreamTrack);
       }
     });
-    if (stream.getTracks().length > 0) {
-      setLocalStream(stream);
-    } else if (!enabled) {
-      // Camera is being turned off, keep audio-only stream
-      const audioStream = new MediaStream();
-      room.localParticipant.trackPublications.forEach((pub) => {
-        if (pub.track && pub.track.kind === 'audio') {
-          audioStream.addTrack(pub.track.mediaStreamTrack);
-        }
-      });
-      setLocalStream(audioStream.getTracks().length > 0 ? audioStream : null);
-    }
+    setLocalStream(stream.getTracks().length > 0 ? stream : null);
 
     updateParticipants();
   }, [updateParticipants]);

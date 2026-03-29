@@ -124,7 +124,7 @@ export async function POST(req: NextRequest) {
       metadata: JSON.stringify({
         role: 'guest',
         isHost: false,
-        inWaitingRoom: false, // Direct join for scheduled meetings
+        inWaitingRoom: true, // Place guests in waiting room so host can admit them
         source: 'executewithyou',
         ewMeetingId: meetingId,
       }),
