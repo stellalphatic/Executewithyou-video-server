@@ -1,5 +1,6 @@
+/// <reference types="node" />
 import { NextRequest, NextResponse } from 'next/server';
-import { WebhookReceiver } from 'livekit-server-sdk';
+import { WebhookReceiver, EgressClient, EncodedFileOutput, S3Upload } from 'livekit-server-sdk';
 
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY!;
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET!;
@@ -32,7 +33,61 @@ export async function POST(req: NextRequest) {
       egressId: event.egressInfo?.egressId,
       roomName: event.egressInfo?.roomName,
       status: event.egressInfo?.status,
+      participant: event.participant?.identity,
+      room: event.room?.name,
     });
+
+    // Auto-start egress when the first participant joins
+    if (event.event === 'participant_joined' && event.room) {
+      const room = event.room;
+      let metadata: any = {};
+      try {
+        metadata = JSON.parse(room.metadata || '{}');
+      } catch(e) {}
+      
+      console.log(`[Recording Webhook] Participant joined ${room.name}. Metadata:`, metadata);
+      
+      // If autoRecord is true and no egress is currently active
+      if (metadata.autoRecord && room.numParticipants === 1) {
+        console.log(`[Recording Webhook] Triggering auto-record for room: ${room.name}`);
+        
+        const egressClient = new EgressClient(
+          process.env.LIVEKIT_URL || 'http://localhost:7880',
+          LIVEKIT_API_KEY,
+          LIVEKIT_API_SECRET
+        );
+        
+        try {
+          // Check if egress already exists
+          const existing = await egressClient.listEgress({ roomName: room.name });
+          if (!existing || existing.length === 0) {
+            const s3Upload = new S3Upload({
+              accessKey: process.env.S3_ACCESS_KEY_ID || '',
+              secret: process.env.S3_SECRET_ACCESS_KEY || '',
+              bucket: process.env.S3_BUCKET || 'executewithyou-recordings',
+              region: process.env.S3_REGION || 'us-east-1',
+              endpoint: process.env.S3_ENDPOINT_URL || '',
+              forcePathStyle: true,
+            });
+
+            const fileOutput = new EncodedFileOutput({
+              filepath: `recordings/${room.name.replace('ewym_', '')}/${Date.now()}.mp4`,
+              output: { case: 's3', value: s3Upload },
+            });
+
+            await egressClient.startRoomCompositeEgress(room.name, {
+              file: fileOutput,
+              layout: 'grid',
+            });
+            console.log(`[Recording Webhook] Successfully started RoomCompositeEgress for ${room.name}`);
+          } else {
+             console.log(`[Recording Webhook] Egress already active for ${room.name}, skipping.`);
+          }
+        } catch (e) {
+          console.error(`[Recording Webhook] Failed to start auto-recording for ${room.name}:`, e);
+        }
+      }
+    }
 
     // Handle egress completion events
     if (event.event === 'egress_ended' && event.egressInfo) {

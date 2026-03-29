@@ -11,7 +11,7 @@ import {
     Settings, Upload, ImageIcon, Monitor, ChevronLeft, ChevronRight,
     Minimize, Move, StopCircle as StopIcon, Trash2, Lock as LockIcon
 } from 'lucide-react';
-import { useAllstrm } from '@/hooks/useAllstrm';
+import { useAllstrmLiveKit as useAllstrm } from '@/hooks/useAllstrmLiveKit';
 import { StudioConfiguration, MeetingLayout, VisualConfigType } from '@/types';
 import { Scene, SceneItem } from '../../types/layout';
 import { WebGLGallery } from './WebGLGallery';
@@ -393,20 +393,7 @@ export const Meeting: React.FC<MeetingProps> = ({ config, onLeave }) => {
                                 )}
                                 <input id="fs" type="file" className="hidden" accept=".pdf,.pptx" onChange={(e) => { if (e.target.files?.[0]) { startFilePresentation(e.target.files[0]); ui.setActiveMenu(null); } }} />
                             </div>
-                            <div className="relative">
-                                <ControlButton icon={<CircleDot />} label="Record" active={ui.activeMenu === 'record' || activeRecordings.length > 0} danger={activeRecordings.length > 0} onClick={() => ui.toggleMenu('record')} />
-                                {ui.activeMenu === 'record' && (
-                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 w-64 bg-[#222] border border-gray-700 rounded-xl shadow-2xl z-50 animate-scale-in">
-                                        <div className="p-3 border-b border-gray-700/50">
-                                            <div className="flex justify-between items-center mb-2"><span className="text-xs font-bold">Meeting (Mixed)</span> {activeRecordings.includes('mixed') && <span className="text-[9px] text-red-500 font-bold">REC</span>}</div>
-                                            <div className="flex gap-2">
-                                                <button className={`flex-1 py-1 rounded text-xs font-bold ${activeRecordings.includes('mixed') ? 'bg-red-500' : 'bg-gray-700'}`} onClick={() => handleToggleRecording('mixed')}>{activeRecordings.includes('mixed') ? 'STOP' : 'START'}</button>
-                                                {activeRecordings.includes('mixed') && <button className="w-12 bg-gray-700 rounded" onClick={() => pausedRecordings.includes('mixed') ? resumeRecording('mixed') : pauseRecording('mixed')}>{pausedRecordings.includes('mixed') ? <Play className="w-3 h-3 mx-auto" /> : <Pause className="w-3 h-3 mx-auto" />}</button>}
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
+                            {/* Recording is now automated via Egress */}
                             <div className="relative">
                                 <ControlButton icon={<Smile />} label="React" active={ui.activeMenu === 'reactions'} onClick={() => ui.toggleMenu('reactions')} />
                                 {ui.activeMenu === 'reactions' && (
