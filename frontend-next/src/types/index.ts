@@ -295,7 +295,6 @@ export interface ChatMessage {
   isSystem?: boolean;
 }
 
-// Full configuration passed from Setup to Studio/Meeting
 export interface StudioConfiguration {
   roomId: string;
   roomName: string; // Display name for the room/meeting
@@ -313,6 +312,7 @@ export interface StudioConfiguration {
   frameRate: number;
   visualConfig: VisualConfigType;
   mode: RoomMode; // Studio or Meeting
+  preGeneratedToken?: string;
 }
 
 export interface UseAllstrmOptions {
