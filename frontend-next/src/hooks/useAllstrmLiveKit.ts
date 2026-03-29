@@ -315,11 +315,16 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
         const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
         if (!isLocalhost) {
           const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-          dynamicUrl = `${wsProtocol}//${window.location.hostname}:7880`;
+          dynamicUrl = `${wsProtocol}//${window.location.hostname}`;
         }
       }
       const envUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL;
-      const finalServerUrl = data.serverUrl || ((envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) ? envUrl : dynamicUrl);
+      let finalServerUrl = data.serverUrl || ((envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) ? envUrl : dynamicUrl);
+      
+      // Strip :7880 in production so we route through Caddy's standard 443 TLS port
+      if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+        finalServerUrl = finalServerUrl.replace(':7880', '');
+      }
       
       return {
         token: data.token,
@@ -358,13 +363,18 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
         if (typeof window !== 'undefined') {
           const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
           if (!isLocalhost) {
-            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            dynamicUrl = `${wsProtocol}//${window.location.hostname}:7880`;
+          const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            dynamicUrl = `${wsProtocol}//${window.location.hostname}`;
           }
         }
         
         const envUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL;
-        const serverUrl = (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) ? envUrl : dynamicUrl;
+        let serverUrl = (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) ? envUrl : dynamicUrl;
+        
+        // Strip :7880 in production so we route through Caddy's standard 443 TLS port
+        if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+          serverUrl = serverUrl.replace(':7880', '');
+        }
         
         tokenData = {
           token: options.initialConfig.preGeneratedToken,
