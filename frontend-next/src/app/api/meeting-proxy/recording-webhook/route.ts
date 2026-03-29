@@ -75,10 +75,11 @@ export async function POST(req: NextRequest) {
               output: { case: 's3', value: s3Upload },
             });
 
-            await egressClient.startRoomCompositeEgress(room.name, {
-              file: fileOutput,
-              layout: 'grid',
-            });
+            await egressClient.startRoomCompositeEgress(
+              room.name,
+              { file: fileOutput },
+              { layout: 'grid' }
+            );
             console.log(`[Recording Webhook] Successfully started RoomCompositeEgress for ${room.name}`);
           } else {
              console.log(`[Recording Webhook] Egress already active for ${room.name}, skipping.`);
