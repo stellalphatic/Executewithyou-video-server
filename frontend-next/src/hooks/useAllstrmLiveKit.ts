@@ -35,7 +35,6 @@ import { ApiClient } from '@/lib/api';
  * Maintains the same interface as the original hook for backward compatibility
  */
 export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn & {
-export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn & {
   remoteStreams: Record<string, MediaStream>;
   remoteScreenStreams: Record<string, MediaStream>;
   unmuteAllParticipants: () => void;
