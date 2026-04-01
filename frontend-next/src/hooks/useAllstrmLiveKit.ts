@@ -35,7 +35,9 @@ import { ApiClient } from '@/lib/api';
  * Maintains the same interface as the original hook for backward compatibility
  */
 export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn & {
+export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn & {
   remoteStreams: Record<string, MediaStream>;
+  remoteScreenStreams: Record<string, MediaStream>;
   unmuteAllParticipants: () => void;
   muteAllParticipants: () => void;
   stopAllVideo: () => void;
@@ -91,6 +93,7 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
+  const [remoteScreenStreams, setRemoteScreenStreams] = useState<Record<string, MediaStream>>({});
   const [myParticipantId, setMyParticipantId] = useState<string | null>(null);
   const [layoutState, setLayoutState] = useState<LayoutState | null>(null);
 
@@ -272,22 +275,32 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
     if (!roomRef.current) return;
 
     const streams: Record<string, MediaStream> = {};
+    const screenStreams: Record<string, MediaStream> = {};
 
     roomRef.current.remoteParticipants.forEach((participant) => {
       const stream = new MediaStream();
+      const screenStreamObj = new MediaStream();
 
       participant.trackPublications.forEach((publication) => {
         if (publication.track && publication.isSubscribed) {
-          stream.addTrack(publication.track.mediaStreamTrack);
+          if (publication.source === Track.Source.ScreenShare || publication.source === Track.Source.ScreenShareAudio) {
+            screenStreamObj.addTrack(publication.track.mediaStreamTrack);
+          } else {
+            stream.addTrack(publication.track.mediaStreamTrack);
+          }
         }
       });
 
       if (stream.getTracks().length > 0) {
         streams[participant.identity] = stream;
       }
+      if (screenStreamObj.getTracks().length > 0) {
+        screenStreams[participant.identity] = screenStreamObj;
+      }
     });
 
     setRemoteStreams(streams);
+    setRemoteScreenStreams(screenStreams);
   }, []);
 
   // Fetch token from our API

@@ -37,7 +37,9 @@ export async function POST(req: NextRequest) {
       room: event.room?.name,
     });
 
-    // Auto-start egress when the first participant joins
+    const isMerchant = event.participant?.identity?.startsWith('merchant_');
+
+    // Auto-start egress when the merchant joins
     if (event.event === 'participant_joined' && event.room) {
       const room = event.room;
       let metadata: any = {};
@@ -45,11 +47,11 @@ export async function POST(req: NextRequest) {
         metadata = JSON.parse(room.metadata || '{}');
       } catch(e) {}
       
-      console.log(`[Recording Webhook] Participant joined ${room.name}. Metadata:`, metadata);
+      console.log(`[Recording Webhook] Participant joined ${room.name}. Identity: ${event.participant?.identity}`);
       
-      // If autoRecord is true and no egress is currently active
-      if (metadata.autoRecord && room.numParticipants === 1) {
-        console.log(`[Recording Webhook] Triggering auto-record for room: ${room.name}`);
+      // If autoRecord is true and it's the merchant joining
+      if (metadata.autoRecord && isMerchant) {
+        console.log(`[Recording Webhook] Merchant joined, triggering auto-record for room: ${room.name}`);
         
         const egressClient = new EgressClient(
           process.env.LIVEKIT_URL || 'http://localhost:7880',
@@ -59,7 +61,7 @@ export async function POST(req: NextRequest) {
         
         try {
           // Check if egress already exists
-          const existing = await egressClient.listEgress({ roomName: room.name });
+          const existing = await egressClient.listEgress({ roomName: room.name, active: true });
           if (!existing || existing.length === 0) {
             const s3Upload = new S3Upload({
               accessKey: process.env.S3_ACCESS_KEY_ID || '',
@@ -67,7 +69,7 @@ export async function POST(req: NextRequest) {
               bucket: process.env.S3_BUCKET || 'executewithyou-recordings',
               region: process.env.S3_REGION || 'us-east-1',
               endpoint: process.env.S3_ENDPOINT_URL || '',
-              forcePathStyle: true,
+              forcePathStyle: false, // Must be false for AWS S3
             });
 
             const fileOutput = new EncodedFileOutput({
@@ -86,6 +88,31 @@ export async function POST(req: NextRequest) {
           }
         } catch (e) {
           console.error(`[Recording Webhook] Failed to start auto-recording for ${room.name}:`, e);
+        }
+      }
+    }
+
+    // Stop auto-record when the merchant leaves
+    if (event.event === 'participant_left' && event.room) {
+      if (isMerchant) {
+        const room = event.room;
+        console.log(`[Recording Webhook] Merchant left, stopping egress for room: ${room.name}`);
+        const egressClient = new EgressClient(
+          process.env.LIVEKIT_URL || 'http://localhost:7880',
+          LIVEKIT_API_KEY,
+          LIVEKIT_API_SECRET
+        );
+        
+        try {
+          const existing = await egressClient.listEgress({ roomName: room.name, active: true });
+          if (existing && existing.length > 0) {
+            for (const egress of existing) {
+              await egressClient.stopEgress(egress.egressId);
+              console.log(`[Recording Webhook] Stopped egress ${egress.egressId}`);
+            }
+          }
+        } catch (e) {
+          console.error(`[Recording Webhook] Failed to stop auto-recording for ${room.name}:`, e);
         }
       }
     }
@@ -130,7 +157,7 @@ export async function POST(req: NextRequest) {
             body: JSON.stringify({
               meetingId,
               egressId,
-              status: status === 3 ? 'completed' : 'failed', // EgressStatus.EGRESS_COMPLETE = 3
+              status: (status === 3 || String(status) === 'EGRESS_COMPLETE') ? 'completed' : 'failed', // EgressStatus.EGRESS_COMPLETE = 3
               recordingPath,
               fileSizeBytes,
               durationSeconds,

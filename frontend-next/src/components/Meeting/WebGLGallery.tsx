@@ -8,6 +8,7 @@ import { ParticipantTile } from './ParticipantTile';
 interface WebGLGalleryProps {
     participants: Participant[];
     remoteStreams: Record<string, MediaStream>;
+    remoteScreenStreams?: Record<string, MediaStream>;
     localStream: MediaStream | null;
     screenStream?: MediaStream | null;
     layout?: MeetingLayout;
@@ -24,6 +25,7 @@ interface WebGLGalleryProps {
 export const WebGLGallery: React.FC<WebGLGalleryProps> = ({
     participants,
     remoteStreams,
+    remoteScreenStreams = {},
     localStream,
     screenStream,
     layout = 'gallery',
@@ -89,6 +91,7 @@ export const WebGLGallery: React.FC<WebGLGalleryProps> = ({
 
         // Remote Participants
         participants.forEach(p => {
+            // Camera
             items.push({
                 id: p.id,
                 participantId: p.id,
@@ -98,6 +101,19 @@ export const WebGLGallery: React.FC<WebGLGalleryProps> = ({
                 isLocal: false,
                 participant: p
             });
+
+            // Remote Screen Share
+            if (remoteScreenStreams[p.id]) {
+                items.push({
+                    id: `${p.id}-screen`,
+                    participantId: p.id,
+                    display_name: `${p.display_name}'s Screen`,
+                    stream: remoteScreenStreams[p.id],
+                    isScreen: true,
+                    isLocal: false,
+                    participant: p
+                });
+            }
         });
 
         return items;

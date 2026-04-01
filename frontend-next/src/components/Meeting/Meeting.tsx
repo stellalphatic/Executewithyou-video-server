@@ -87,7 +87,9 @@ export const Meeting: React.FC<MeetingProps> = ({ config, onLeave }) => {
         chatMessages, sendChatMessage, admitParticipant, startFilePresentation,
         globalMuteState, globalVideoState, activeRecordings, pausedRecordings,
         nextSlide, prevSlide, presentationState,
-        setMixerLayout, updateRecordingScene, isLocalInWaitingRoom, isRoomRecording
+        setMixerLayout, updateRecordingScene, isLocalInWaitingRoom, isRoomRecording,
+        remoteScreenStreams,
+        sendDataMessage
     } = allstrm;
 
     useEffect(() => {
@@ -330,6 +332,7 @@ export const Meeting: React.FC<MeetingProps> = ({ config, onLeave }) => {
                     <WebGLGallery
                         participants={activeParticipants}
                         remoteStreams={remoteStreams}
+                        remoteScreenStreams={remoteScreenStreams}
                         localStream={media.processedLocalStream || localStream}
                         screenStream={screenStream}
                         layout={ui.layout}
@@ -453,7 +456,18 @@ export const Meeting: React.FC<MeetingProps> = ({ config, onLeave }) => {
                     <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
                         {chatMessages.map((msg, i) => (
                             <div key={msg.id} className={`flex flex-col ${msg.senderId === 'local' ? 'items-end' : 'items-start'}`}>
-                                {msg.isSystem ? <div className="text-[10px] text-gray-500 text-center w-full">{msg.text}</div> : <div className={`text-sm py-2 px-3 rounded-xl ${msg.senderId === 'local' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-200'}`}>{msg.text}</div>}
+                                {msg.isSystem ? (
+                                    <div className="text-[10px] text-gray-500 text-center w-full my-1">{msg.text}</div>
+                                ) : (
+                                    <div className="flex flex-col max-w-[85%]">
+                                        <span className={`text-[10px] mb-0.5 px-1 font-medium ${msg.senderId === 'local' ? 'text-right text-indigo-300' : 'text-left text-gray-400'}`}>
+                                            {msg.senderId === 'local' ? 'You' : (msg.sender || 'Participant')}
+                                        </span>
+                                        <div className={`text-sm py-2 px-3 rounded-xl ${msg.senderId === 'local' ? 'bg-indigo-600 text-white rounded-tr-sm' : 'bg-gray-800 text-gray-200 rounded-tl-sm'}`}>
+                                            {msg.text}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         ))}
                         <div ref={chatEndRef} />
