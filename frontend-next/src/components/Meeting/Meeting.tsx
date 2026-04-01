@@ -461,7 +461,7 @@ export const Meeting: React.FC<MeetingProps> = ({ config, onLeave }) => {
                                 ) : (
                                     <div className="flex flex-col max-w-[85%]">
                                         <span className={`text-[10px] mb-0.5 px-1 font-medium ${msg.senderId === 'local' ? 'text-right text-indigo-300' : 'text-left text-gray-400'}`}>
-                                            {msg.senderId === 'local' ? 'You' : (msg.sender || 'Participant')}
+                                            {msg.senderId === 'local' ? 'You' : (msg.senderName || 'Participant')}
                                         </span>
                                         <div className={`text-sm py-2 px-3 rounded-xl ${msg.senderId === 'local' ? 'bg-indigo-600 text-white rounded-tr-sm' : 'bg-gray-800 text-gray-200 rounded-tl-sm'}`}>
                                             {msg.text}
