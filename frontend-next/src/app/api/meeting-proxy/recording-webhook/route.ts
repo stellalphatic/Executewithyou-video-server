@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Stop auto-record when the merchant leaves
+    // Stop auto-record when the merchant leaves and mark meeting as completed proactively
     if (event.event === 'participant_left' && event.room) {
       if (isMerchant) {
         const room = event.room;
@@ -113,6 +113,27 @@ export async function POST(req: NextRequest) {
           }
         } catch (e) {
           console.error(`[Recording Webhook] Failed to stop auto-recording for ${room.name}:`, e);
+        }
+
+        // Notify EWY immediately that the meeting is completed
+        const meetingId = room.name?.startsWith('ewym_') ? room.name.replace('ewym_', '') : null;
+        if (meetingId && EWY_CALLBACK_URL && EWY_WEBHOOK_SECRET) {
+          try {
+            console.log(`[Recording Webhook] Notifying EWY to mark meeting ${meetingId} as completed (Merchant left)`);
+            await fetch(EWY_CALLBACK_URL, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Webhook-Secret': EWY_WEBHOOK_SECRET,
+              },
+              body: JSON.stringify({
+                meetingId,
+                status: 'completed',
+              }),
+            });
+          } catch (err) {
+            console.error('[Recording Webhook] Failed to notify EWY of meeting completion:', err);
+          }
         }
       }
     }

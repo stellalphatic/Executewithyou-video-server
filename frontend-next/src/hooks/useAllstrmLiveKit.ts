@@ -98,6 +98,11 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
 
   // File presentation state
   const presentationStreamRef = useRef<PresentationStream | null>(null);
+
+  // Track MediaStreams across updates to prevent React from tearing down video tags
+  const streamMapRef = useRef<Record<string, MediaStream>>({});
+  const screenStreamMapRef = useRef<Record<string, MediaStream>>({});
+  const localStreamCacheRef = useRef<MediaStream | null>(null);
   const [presentationState, setPresentationState] = useState<{
     currentSlide: number;
     totalSlides: number;
@@ -277,17 +282,44 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
     const screenStreams: Record<string, MediaStream> = {};
 
     roomRef.current.remoteParticipants.forEach((participant) => {
-      const stream = new MediaStream();
-      const screenStreamObj = new MediaStream();
+      let stream = streamMapRef.current[participant.identity];
+      if (!stream) {
+        stream = new MediaStream();
+        streamMapRef.current[participant.identity] = stream;
+      }
+
+      let screenStreamObj = screenStreamMapRef.current[participant.identity];
+      if (!screenStreamObj) {
+        screenStreamObj = new MediaStream();
+        screenStreamMapRef.current[participant.identity] = screenStreamObj;
+      }
+
+      const activeStreamTracks = new Set<MediaStreamTrack>();
+      const activeScreenTracks = new Set<MediaStreamTrack>();
 
       participant.trackPublications.forEach((publication) => {
         if (publication.track && publication.isSubscribed) {
+          const webTrack = publication.track.mediaStreamTrack;
           if (publication.source === Track.Source.ScreenShare || publication.source === Track.Source.ScreenShareAudio) {
-            screenStreamObj.addTrack(publication.track.mediaStreamTrack);
+            activeScreenTracks.add(webTrack);
+            if (!screenStreamObj.getTracks().includes(webTrack)) {
+              screenStreamObj.addTrack(webTrack);
+            }
           } else {
-            stream.addTrack(publication.track.mediaStreamTrack);
+            activeStreamTracks.add(webTrack);
+            if (!stream.getTracks().includes(webTrack)) {
+              stream.addTrack(webTrack);
+            }
           }
         }
+      });
+
+      // Remove stale tracks
+      stream.getTracks().forEach((t) => {
+        if (!activeStreamTracks.has(t)) stream.removeTrack(t);
+      });
+      screenStreamObj.getTracks().forEach((t) => {
+        if (!activeScreenTracks.has(t)) screenStreamObj.removeTrack(t);
       });
 
       if (stream.getTracks().length > 0) {
@@ -465,14 +497,27 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
 
         // Create local stream from local tracks
         if (room.localParticipant) {
-          const stream = new MediaStream();
+          let stream = localStreamCacheRef.current;
+          if (!stream) {
+            stream = new MediaStream();
+            localStreamCacheRef.current = stream;
+          }
+          const activeTracks = new Set<MediaStreamTrack>();
           room.localParticipant.trackPublications.forEach((pub) => {
             if (pub.track && (pub.source === Track.Source.Camera || pub.source === Track.Source.Microphone)) {
-              stream.addTrack(pub.track.mediaStreamTrack);
+              activeTracks.add(pub.track.mediaStreamTrack);
+              if (!stream.getTracks().includes(pub.track.mediaStreamTrack)) {
+                stream.addTrack(pub.track.mediaStreamTrack);
+              }
             }
+          });
+          stream.getTracks().forEach((t) => {
+            if (!activeTracks.has(t)) stream.removeTrack(t);
           });
           if (stream.getTracks().length > 0) {
             setLocalStream(stream);
+          } else {
+            setLocalStream(null);
           }
         }
       });
@@ -541,35 +586,37 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
         updateParticipants();
       });
 
-      room.on(RoomEvent.LocalTrackPublished, (publication: LocalTrackPublication) => {
-        console.log('[useAllstrmLiveKit] Local track published:', publication.kind);
-        // Update local stream
-        if (room.localParticipant) {
-          const stream = new MediaStream();
-          room.localParticipant.trackPublications.forEach((pub) => {
-            if (pub.track && (pub.source === Track.Source.Camera || pub.source === Track.Source.Microphone)) {
+      const updateLocalStream = () => {
+        if (!roomRef.current?.localParticipant) return;
+        let stream = localStreamCacheRef.current;
+        if (!stream) {
+          stream = new MediaStream();
+          localStreamCacheRef.current = stream;
+        }
+        const activeTracks = new Set<MediaStreamTrack>();
+        roomRef.current.localParticipant.trackPublications.forEach((pub) => {
+          if (pub.track && pub.track.mediaStreamTrack && (pub.source === Track.Source.Camera || pub.source === Track.Source.Microphone)) {
+            activeTracks.add(pub.track.mediaStreamTrack);
+            if (!stream.getTracks().includes(pub.track.mediaStreamTrack)) {
               stream.addTrack(pub.track.mediaStreamTrack);
             }
-          });
-          if (stream.getTracks().length > 0) {
-            setLocalStream(stream);
           }
-        }
+        });
+        stream.getTracks().forEach((t) => {
+          if (!activeTracks.has(t)) stream.removeTrack(t);
+        });
+        setLocalStream(stream.getTracks().length > 0 ? stream : null);
+      };
+
+      room.on(RoomEvent.LocalTrackPublished, (publication: LocalTrackPublication) => {
+        console.log('[useAllstrmLiveKit] Local track published:', publication.kind);
+        updateLocalStream();
         updateParticipants();
       });
 
       room.on(RoomEvent.LocalTrackUnpublished, (publication: LocalTrackPublication) => {
         console.log('[useAllstrmLiveKit] Local track unpublished:', publication.kind);
-        // Update local stream to remove the unpublished track
-        if (room.localParticipant) {
-          const stream = new MediaStream();
-          room.localParticipant.trackPublications.forEach((pub) => {
-            if (pub.track && pub.track.mediaStreamTrack && (pub.source === Track.Source.Camera || pub.source === Track.Source.Microphone)) {
-              stream.addTrack(pub.track.mediaStreamTrack);
-            }
-          });
-          setLocalStream(stream.getTracks().length > 0 ? stream : null);
-        }
+        updateLocalStream();
         updateParticipants();
       });
 
@@ -651,6 +698,39 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
                 senderName: participant?.name || 'System',
                 text: data.message,
                 timestamp: Date.now(),
+              },
+            ]);
+          }
+
+          // Handle reactions
+          if (data.type === 'reaction') {
+            setChatMessages((prev) => [
+              ...prev,
+              {
+                id: `${Date.now()}-${participant?.identity || 'system'}`,
+                senderId: participant?.identity || 'system',
+                senderName: participant?.name || participant?.identity || 'System',
+                text: `Reacted ${data.emoji || data.reaction || '👍'}`,
+                timestamp: Date.now(),
+                isSystem: true,
+              },
+            ]);
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('meeting-reaction', { detail: { ...data, senderName: participant?.name } }));
+            }
+          }
+
+          // Handle hand raise
+          if (data.type === 'hand_raise') {
+            setChatMessages((prev) => [
+              ...prev,
+              {
+                id: `${Date.now()}-${participant?.identity || 'system'}`,
+                senderId: participant?.identity || 'system',
+                senderName: participant?.name || participant?.identity || 'System',
+                text: 'Raised Hand ✋',
+                timestamp: Date.now(),
+                isSystem: true,
               },
             ]);
           }
@@ -1210,7 +1290,8 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
     setParticipants((p) => p.filter((x) => x.id !== id));
   }, []);
 
-  const sendReaction = useCallback((emoji: string) => {
+  const sendReaction = useCallback(async (emoji: string) => {
+    // 1. Show locally in chat
     setChatMessages((p) => [
       ...p,
       {
@@ -1222,9 +1303,22 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
         isSystem: true,
       },
     ]);
+    
+    // 2. Broadcast to room
+    if (roomRef.current) {
+      try {
+        const message = { type: 'reaction', emoji: emoji, timestamp: Date.now() };
+        await roomRef.current.localParticipant.publishData(
+          new TextEncoder().encode(JSON.stringify(message)),
+          { reliable: true }
+        );
+      } catch (err) {
+        console.error('[useAllstrmLiveKit] Failed to broadcast reaction:', err);
+      }
+    }
   }, []);
 
-  const toggleHandRaise = useCallback(() => {
+  const toggleHandRaise = useCallback(async () => {
     setChatMessages((p) => [
       ...p,
       {
@@ -1236,6 +1330,18 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
         isSystem: true,
       },
     ]);
+    
+    if (roomRef.current) {
+      try {
+        const message = { type: 'hand_raise', timestamp: Date.now() };
+        await roomRef.current.localParticipant.publishData(
+          new TextEncoder().encode(JSON.stringify(message)),
+          { reliable: true }
+        );
+      } catch (err) {
+        console.error('[useAllstrmLiveKit] Failed to broadcast hand raise:', err);
+      }
+    }
   }, []);
 
   // Fetch destinations from database on mount or userId change
