@@ -355,7 +355,7 @@ export interface UseAllstrmReturn {
   startRecording: (type?: 'mixed' | 'iso', stageElement?: HTMLDivElement | null) => void;
   stopRecording: (recordingId: string) => void;
   prepareCamera: () => Promise<MediaStream | null | void>;
-  switchDevice: (kind: 'audio' | 'video', deviceId: string) => Promise<void>;
+  switchDevice: (kind: 'audio' | 'video' | 'videoinput' | 'audioinput' | 'audiooutput', deviceId: string) => Promise<void>;
   updateVideoConfig: (config: StreamConfigParams) => Promise<void>;
   replaceVideoTrack: (track: MediaStreamTrack) => Promise<void>;
   // Guest Management Actions

@@ -1658,11 +1658,24 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
     console.log('[useAllstrmLiveKit] Mixer layout:', layout, focusId);
   }, []);
 
-  // Stubs for unused functions
-  const updateLayout = useCallback(async () => { }, []);
-  const prepareCamera = useCallback(async () => { }, []);
-  const switchDevice = useCallback(async () => { }, []);
-  const updateVideoConfig = useCallback(async () => { }, []);
+  // Stubs for unused functions (implemented with basic logging or minimal operation to satisfy types)
+  const updateLayout = useCallback(async (positions: any[]) => { }, []);
+  const prepareCamera = useCallback(async () => { return null; }, []);
+  const updateVideoConfig = useCallback(async (config: any) => { }, []);
+
+  const switchDevice = useCallback(async (kind: string, deviceId: string) => {
+    if (roomRef.current) {
+      try {
+        let lkKind: 'videoinput' | 'audioinput' | 'audiooutput' = kind as any;
+        if (kind === 'audio') lkKind = 'audioinput';
+        if (kind === 'video') lkKind = 'videoinput';
+        await roomRef.current.switchActiveDevice(lkKind, deviceId);
+        console.log(`[useAllstrmLiveKit] Switched ${lkKind} device to ${deviceId}`);
+      } catch (err) {
+        console.error(`[useAllstrmLiveKit] Failed to switch ${kind} device:`, err);
+      }
+    }
+  }, []);
 
   // Clean up on unmount
   useEffect(() => {
