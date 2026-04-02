@@ -90,7 +90,7 @@ export const WebGLGallery: React.FC<WebGLGalleryProps> = ({
         });
 
         // Remote Participants
-        participants.forEach(p => {
+        participants.filter(p => p.id !== 'local').forEach(p => {
             // Camera
             items.push({
                 id: p.id,

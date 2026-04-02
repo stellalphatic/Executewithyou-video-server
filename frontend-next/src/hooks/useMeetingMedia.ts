@@ -71,6 +71,10 @@ export function useMeetingMedia(
                 if (sourceRef.current) sourceRef.current.disconnect();
                 if (analyserRef.current) analyserRef.current.disconnect();
 
+                if (localStream.getAudioTracks().length === 0) {
+                    return;
+                }
+
                 const analyser = ctx.createAnalyser();
                 analyser.fftSize = 256;
                 const source = ctx.createMediaStreamSource(localStream);

@@ -15,6 +15,9 @@ import { useAllstrmLiveKit as useAllstrm } from '@/hooks/useAllstrmLiveKit';
 import { StudioConfiguration, MeetingLayout, VisualConfigType } from '@/types';
 import { Scene, SceneItem } from '../../types/layout';
 import { WebGLGallery } from './WebGLGallery';
+import { FloatingReactions } from './FloatingReactions';
+import { ChatToasts } from './ChatToasts';
+import { ParticipantTile } from './ParticipantTile';
 import { Button } from '../Button';
 import { useMeetingUI } from '@/hooks/useMeetingUI';
 import { useMeetingMedia } from '@/hooks/useMeetingMedia';
@@ -375,7 +378,7 @@ export const Meeting: React.FC<MeetingProps> = ({ config, onLeave }) => {
                         </button>
                         <div className="flex items-center gap-2">
                             <ControlButton 
-                                icon={audioEnabled ? <Mic /> : <MicOff />} 
+                                icon={audioEnabled ? <MicOff /> : <Mic />} 
                                 label={audioEnabled ? "Mute" : "Unmute"} 
                                 active={!audioEnabled} 
                                 onClick={handleToggleAudio} 
@@ -384,7 +387,7 @@ export const Meeting: React.FC<MeetingProps> = ({ config, onLeave }) => {
                                 lockedMessage="Audio restricted by host"
                             />
                             <ControlButton 
-                                icon={videoEnabled ? <Video /> : <VideoOff />} 
+                                icon={videoEnabled ? <VideoOff /> : <Video />} 
                                 label={videoEnabled ? "Stop" : "Start"} 
                                 active={!videoEnabled} 
                                 onClick={handleToggleVideo} 
@@ -434,6 +437,9 @@ export const Meeting: React.FC<MeetingProps> = ({ config, onLeave }) => {
                     </div>
                 </div>
             </div>
+
+            <FloatingReactions />
+            <ChatToasts messages={chatMessages} isChatOpen={ui.activeMenu === 'chat'} />
 
             {/* Modals */}
             {ui.showEndConfirmation && (

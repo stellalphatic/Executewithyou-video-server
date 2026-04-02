@@ -645,6 +645,13 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
               if (typeof window !== 'undefined') {
                 sessionStorage.setItem(admissionStorageKey, 'true');
               }
+              // Turn on AV if configured to
+              if (options.initialConfig?.videoEnabled && roomRef.current?.localParticipant) {
+                  roomRef.current.localParticipant.setCameraEnabled(true).catch(console.error);
+              }
+              if (options.initialConfig?.audioEnabled && roomRef.current?.localParticipant) {
+                  roomRef.current.localParticipant.setMicrophoneEnabled(true).catch(console.error);
+              }
               console.log('[useAllstrmLiveKit] Admitted to room!');
             }
           }
@@ -754,16 +761,32 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
       // Connect to room with video/audio
       await room.connect(tokenData.serverUrl, tokenData.token);
 
-      console.log('[useAllstrmLiveKit] Room connected, enabling tracks...');
+      console.log('[useAllstrmLiveKit] Room connected, enabling tracks if not in waiting room...');
 
-      // Enable camera and microphone
-      if (enableVideo) {
+      // Enable camera and microphone only if not in waiting room
+      const alreadyAdmittedInit = typeof window !== 'undefined' && sessionStorage.getItem(admissionStorageKey) === 'true';
+      let inWaitingRoomInit = false;
+      if (room.localParticipant) {
+        try {
+          const meta = room.localParticipant.metadata ? JSON.parse(room.localParticipant.metadata) : {};
+          if (meta.inWaitingRoom && !alreadyAdmittedInit) {
+            inWaitingRoomInit = true;
+          }
+        } catch { }
+      }
+
+      if (enableVideo && !inWaitingRoomInit) {
         await room.localParticipant.setCameraEnabled(true);
         console.log('[useAllstrmLiveKit] Camera enabled');
+      } else if (enableVideo && inWaitingRoomInit) {
+        console.log('[useAllstrmLiveKit] Camera not enabled yet (in waiting room)');
       }
-      if (enableAudio) {
+
+      if (enableAudio && !inWaitingRoomInit) {
         await room.localParticipant.setMicrophoneEnabled(true);
         console.log('[useAllstrmLiveKit] Microphone enabled');
+      } else if (enableAudio && inWaitingRoomInit) {
+        console.log('[useAllstrmLiveKit] Microphone not enabled yet (in waiting room)');
       }
 
       // Set initial layout state
@@ -1304,18 +1327,25 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
       },
     ]);
     
-    // 2. Broadcast to room
-    if (roomRef.current) {
-      try {
-        const message = { type: 'reaction', emoji: emoji, timestamp: Date.now() };
-        await roomRef.current.localParticipant.publishData(
-          new TextEncoder().encode(JSON.stringify(message)),
-          { reliable: true }
-        );
-      } catch (err) {
-        console.error('[useAllstrmLiveKit] Failed to broadcast reaction:', err);
-      }
-    }
+        // 2. Broadcast to room
+        if (roomRef.current) {
+            try {
+                const message = { type: 'reaction', emoji: emoji, timestamp: Date.now() };
+                await roomRef.current.localParticipant.publishData(
+                    new TextEncoder().encode(JSON.stringify(message)),
+                    { reliable: true }
+                );
+            } catch (err) {
+                console.error('[useAllstrmLiveKit] Failed to broadcast reaction:', err);
+            }
+        }
+        
+        // 3. Dispatch window event for local UI
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('meeting-reaction', { 
+                detail: { emoji, senderName: 'You' } 
+            }));
+        }
   }, []);
 
   const toggleHandRaise = useCallback(async () => {
