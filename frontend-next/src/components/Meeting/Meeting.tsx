@@ -82,6 +82,7 @@ export const Meeting: React.FC<MeetingProps> = ({ config, onLeave }) => {
         muteParticipant, muteAllParticipants, unmuteAllParticipants, unmuteParticipant,
         stopParticipantVideo, startParticipantVideo, stopAllVideo, allowAllVideo,
         startRecording, stopRecording, pauseRecording, resumeRecording,
+        switchDevice,
         replaceVideoTrack, removeParticipant,
         sendReaction, toggleHandRaise,
         chatMessages, sendChatMessage, admitParticipant, startFilePresentation,
@@ -131,6 +132,10 @@ export const Meeting: React.FC<MeetingProps> = ({ config, onLeave }) => {
     const [recordingTime, setRecordingTime] = useState(0);
     const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
     const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
+    const [outputDevices, setOutputDevices] = useState<MediaDeviceInfo[]>([]);
+    const [activeVideoDeviceId, setActiveVideoDeviceId] = useState<string>('');
+    const [activeAudioDeviceId, setActiveAudioDeviceId] = useState<string>('');
+    const [activeOutputDeviceId, setActiveOutputDeviceId] = useState<string>('');
     const [chatInput, setChatInput] = useState("");
     const chatEndRef = useRef<HTMLDivElement>(null);
     const bottomBarTimerRef = useRef<number | null>(null);
@@ -187,8 +192,15 @@ export const Meeting: React.FC<MeetingProps> = ({ config, onLeave }) => {
     useEffect(() => {
         connect();
         navigator.mediaDevices.enumerateDevices().then(devices => {
-            setVideoDevices(devices.filter(d => d.kind === 'videoinput'));
-            setAudioDevices(devices.filter(d => d.kind === 'audioinput'));
+            const vDevs = devices.filter(d => d.kind === 'videoinput');
+            const aDevs = devices.filter(d => d.kind === 'audioinput');
+            const sDevs = devices.filter(d => d.kind === 'audiooutput');
+            setVideoDevices(vDevs);
+            setAudioDevices(aDevs);
+            setOutputDevices(sDevs);
+            if (vDevs.length > 0) setActiveVideoDeviceId(prev => prev || vDevs[0].deviceId);
+            if (aDevs.length > 0) setActiveAudioDeviceId(prev => prev || aDevs[0].deviceId);
+            if (sDevs.length > 0) setActiveOutputDeviceId(prev => prev || sDevs[0].deviceId);
         });
         return () => {
             disconnect();
@@ -491,8 +503,9 @@ export const Meeting: React.FC<MeetingProps> = ({ config, onLeave }) => {
                             <div className="flex justify-between items-center mb-6"><h2 className="text-xl font-bold">{ui.settingsTab === 'general' ? 'Audio & Video' : 'Visual Effects'}</h2><button onClick={() => { ui.setActiveMenu(null); ui.setShowSettings(false); }}><X className="w-5 h-5" /></button></div>
                             {ui.settingsTab === 'general' ? (
                                 <div className="space-y-4">
-                                    <div className="space-y-1"><label className="text-xs font-bold text-gray-500">CAMERA</label><select className="w-full bg-[#121212] border border-gray-700 rounded p-2 text-sm">{videoDevices.map(d => <option key={d.deviceId}>{d.label}</option>)}</select></div>
-                                    <div className="space-y-1"><label className="text-xs font-bold text-gray-500">MIC</label><select className="w-full bg-[#121212] border border-gray-700 rounded p-2 text-sm">{audioDevices.map(d => <option key={d.deviceId}>{d.label}</option>)}</select></div>
+                                    <div className="space-y-1"><label className="text-xs font-bold text-gray-500">CAMERA</label><select value={activeVideoDeviceId} onChange={(e) => { setActiveVideoDeviceId(e.target.value); switchDevice('videoinput', e.target.value); }} className="w-full bg-[#121212] border border-gray-700 rounded p-2 text-sm">{videoDevices.map(d => <option value={d.deviceId} key={d.deviceId}>{d.label || `Camera ${d.deviceId.slice(0, 5)}`}</option>)}</select></div>
+                                    <div className="space-y-1"><label className="text-xs font-bold text-gray-500">MICROPHONE</label><select value={activeAudioDeviceId} onChange={(e) => { setActiveAudioDeviceId(e.target.value); switchDevice('audioinput', e.target.value); }} className="w-full bg-[#121212] border border-gray-700 rounded p-2 text-sm">{audioDevices.map(d => <option value={d.deviceId} key={d.deviceId}>{d.label || `Mic ${d.deviceId.slice(0, 5)}`}</option>)}</select></div>
+                                    <div className="space-y-1"><label className="text-xs font-bold text-gray-500">SPEAKER</label><select value={activeOutputDeviceId} onChange={(e) => { setActiveOutputDeviceId(e.target.value); switchDevice('audiooutput', e.target.value); }} className="w-full bg-[#121212] border border-gray-700 rounded p-2 text-sm">{outputDevices.map(d => <option value={d.deviceId} key={d.deviceId}>{d.label || `Speaker ${d.deviceId.slice(0, 5)}`}</option>)}</select></div>
                                 </div>
                             ) : (
                                 <div className="space-y-6">
