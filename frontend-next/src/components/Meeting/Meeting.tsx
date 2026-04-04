@@ -85,7 +85,7 @@ export const Meeting: React.FC<MeetingProps> = ({ config, onLeave }) => {
         muteParticipant, muteAllParticipants, unmuteAllParticipants, unmuteParticipant,
         stopParticipantVideo, startParticipantVideo, stopAllVideo, allowAllVideo,
         startRecording, stopRecording, pauseRecording, resumeRecording,
-        switchDevice,
+        switchDevice, getActiveDevice,
         replaceVideoTrack, removeParticipant,
         sendReaction, toggleHandRaise,
         chatMessages, sendChatMessage, admitParticipant, startFilePresentation,
@@ -142,6 +142,18 @@ export const Meeting: React.FC<MeetingProps> = ({ config, onLeave }) => {
     const [chatInput, setChatInput] = useState("");
     const chatEndRef = useRef<HTMLDivElement>(null);
     const bottomBarTimerRef = useRef<number | null>(null);
+
+    // Sync active devices when settings modal opens
+    useEffect(() => {
+        if (ui.showSettings) {
+            const activeVideo = getActiveDevice('videoinput');
+            const activeAudio = getActiveDevice('audioinput');
+            const activeOutput = getActiveDevice('audiooutput');
+            if (activeVideo) setActiveVideoDeviceId(activeVideo);
+            if (activeAudio) setActiveAudioDeviceId(activeAudio);
+            if (activeOutput) setActiveOutputDeviceId(activeOutput);
+        }
+    }, [ui.showSettings, getActiveDevice]);
 
     // 4. Constants
     const customBackgrounds = useMemo(() => [
@@ -460,8 +472,23 @@ export const Meeting: React.FC<MeetingProps> = ({ config, onLeave }) => {
                     <div className="flex-1 overflow-y-auto p-2 custom-scrollbar">
                         {waitingRoomParticipants.map(p => <div key={p.id} className="flex items-center justify-between p-3 bg-gray-800/30 rounded mb-1"><span>{p.display_name}</span><button onClick={() => admitParticipant(p.id)} className="text-xs text-indigo-400 font-bold">Admit</button></div>)}
                         <div className="space-y-1">
-                            <div className="flex items-center justify-between p-2 hover:bg-gray-800 rounded-lg group"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-xs font-bold">YO</div><span className="text-sm">You (Host)</span></div><div className="flex gap-2">{audioEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4 text-red-500" />}</div></div>
-                            {activeParticipants.map(p => <div key={p.id} className="flex items-center justify-between p-2 hover:bg-gray-800 rounded-lg"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-bold">{p.display_name.substring(0, 2).toUpperCase()}</div><span className="text-sm">{p.display_name}</span></div><div className="flex gap-2 shrink-0">{p.media_state.audio_enabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4 text-red-500" />}</div></div>)}
+                            <div className="flex items-center justify-between p-2 hover:bg-gray-800 rounded-lg group"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-xs font-bold">YO</div><span className="text-sm">You {isHost ? '(Host)' : ''}</span></div><div className="flex gap-2">{audioEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4 text-red-500" />}</div></div>
+                            {activeParticipants.map(p => {
+                                let isRemoteHost = false;
+                                try {
+                                    const meta = p.metadata ? JSON.parse(p.metadata) : {};
+                                    isRemoteHost = meta.isHost || meta.role === 'host' || meta.role === 'owner' || p.role === 'host' || p.role === 'owner';
+                                } catch (e) {}
+                                return (
+                                <div key={p.id} className="flex items-center justify-between p-2 hover:bg-gray-800 rounded-lg">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-bold">{p.display_name.substring(0, 2).toUpperCase()}</div>
+                                        <span className="text-sm">{p.display_name} {isRemoteHost ? '(Host)' : ''}</span>
+                                    </div>
+                                    <div className="flex gap-2 shrink-0">{p.media_state.audio_enabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4 text-red-500" />}</div>
+                                </div>
+                                );
+                            })}
                         </div>
                     </div>
                 </div>

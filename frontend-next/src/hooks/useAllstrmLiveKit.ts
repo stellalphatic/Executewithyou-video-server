@@ -139,9 +139,24 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
   const [participantMetadata, setParticipantMetadata] = useState<Record<string, { inWaitingRoom?: boolean }>>(
     isGuest ? { [options.initialConfig?.userId || 'guest']: { inWaitingRoom: true } } : {}
   );
-  const [admittedParticipants, setAdmittedParticipants] = useState<Set<string>>(new Set());
+  const [admittedParticipants, setAdmittedParticipants] = useState<Set<string>>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = sessionStorage.getItem(`host_admitted_${roomId}`);
+      if (saved) {
+        try {
+          return new Set(JSON.parse(saved));
+        } catch { }
+      }
+    }
+    return new Set();
+  });
   // Ref to always have latest admittedParticipants (avoids stale closure in event handlers)
-  const admittedParticipantsRef = useRef<Set<string>>(new Set());
+  const admittedParticipantsRef = useRef<Set<string>>(admittedParticipants);
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem(`host_admitted_${roomId}`, JSON.stringify(Array.from(admittedParticipants)));
+    }
+  }, [admittedParticipants, roomId]);
   const [pausedRecordings, setPausedRecordings] = useState<('mixed' | 'iso')[]>([]);
   const [globalMuteState, setGlobalMuteState] = useState(false);
   const [globalVideoState, setGlobalVideoState] = useState(false);
@@ -833,11 +848,6 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
       } catch (err) {
         console.error('[useAllstrmLiveKit] Failed to send sessionEnded:', err);
       }
-    }
-
-    // Clear admission state from sessionStorage
-    if (typeof window !== 'undefined') {
-      sessionStorage.removeItem(admissionStorageKey);
     }
 
     // Reset connection state refs
@@ -1707,6 +1717,10 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
     }
   }, []);
 
+  const getActiveDevice = useCallback((kind: 'videoinput' | 'audioinput' | 'audiooutput') => {
+    return roomRef.current?.getActiveDevice(kind) || '';
+  }, []);
+
   // Clean up on unmount
   useEffect(() => {
     return () => {
@@ -1756,6 +1770,7 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
       resumeRecording,
       prepareCamera,
       switchDevice,
+      getActiveDevice,
       updateVideoConfig,
       replaceVideoTrack,
       toggleStageStatus,
