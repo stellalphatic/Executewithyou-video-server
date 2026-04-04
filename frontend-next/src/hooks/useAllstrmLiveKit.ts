@@ -230,6 +230,7 @@ export function useAllstrmLiveKit(options: UseAllstrmOptions): UseAllstrmReturn 
         },
         is_on_stage: false,  // Stage status controlled by Studio's onStageParticipants state
         is_in_waiting_room: isInWaitingRoom,
+        metadata: participant.metadata, // Map the metadata property safely
       };
     },
     [options.roomId, admittedParticipants, hasBeenAdmitted]

@@ -156,6 +156,7 @@ export interface Participant {
   current_reaction?: string; // e.g., '👍', '❤️'
   reaction_timestamp?: number;
   joinedAt?: string; // API
+  metadata?: string;
 }
 
 export interface MediaState {
