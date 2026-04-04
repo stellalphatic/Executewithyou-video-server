@@ -1404,6 +1404,7 @@ export function useAllstrm(options: UseAllstrmOptions): UseAllstrmReturn & {
     const updateLayout = useCallback(async () => { }, []);
     const prepareCamera = useCallback(async () => { }, []);
     const switchDevice = useCallback(async () => { }, []);
+    const getActiveDevice = useCallback((kind: 'audioinput' | 'audiooutput' | 'videoinput') => '', []);
     const updateVideoConfig = useCallback(async () => { }, []);
     const toggleStageStatus = useCallback((id: string, on: boolean) => setParticipants(p => p.map(x => x.id === id ? { ...x, is_on_stage: on } : x)), []);
     const removeParticipant = useCallback((id: string) => setParticipants(p => p.filter(x => x.id !== id)), []);
@@ -1418,7 +1419,7 @@ export function useAllstrm(options: UseAllstrmOptions): UseAllstrmReturn & {
         muteParticipant, muteAllParticipants, unmuteAllParticipants, unmuteParticipant,
         stopParticipantVideo, startParticipantVideo, stopAllVideo, allowAllVideo, requestAllVideo,
         startRecording, stopRecording, pauseRecording, resumeRecording,
-        prepareCamera, switchDevice, updateVideoConfig, replaceVideoTrack, toggleStageStatus, removeParticipant,
+        prepareCamera, switchDevice, getActiveDevice, updateVideoConfig, replaceVideoTrack, toggleStageStatus, removeParticipant,
         sendReaction, toggleHandRaise,
         broadcastStatus, destinations, startBroadcast, stopBroadcast, addDestination, removeDestination, toggleDestination, chatMessages, sendChatMessage,
         admitParticipant, startFilePresentation,
@@ -1437,7 +1438,7 @@ export function useAllstrm(options: UseAllstrmOptions): UseAllstrmReturn & {
         muteParticipant, muteAllParticipants, unmuteAllParticipants, unmuteParticipant,
         stopParticipantVideo, startParticipantVideo, stopAllVideo, allowAllVideo, requestAllVideo,
         startRecording, stopRecording, pauseRecording, resumeRecording,
-        prepareCamera, switchDevice, updateVideoConfig, replaceVideoTrack, toggleStageStatus, removeParticipant,
+        prepareCamera, switchDevice, getActiveDevice, updateVideoConfig, replaceVideoTrack, toggleStageStatus, removeParticipant,
         sendReaction, toggleHandRaise,
         broadcastStatus, destinations, startBroadcast, stopBroadcast, addDestination, removeDestination, toggleDestination, chatMessages, sendChatMessage,
         admitParticipant, startFilePresentation,
